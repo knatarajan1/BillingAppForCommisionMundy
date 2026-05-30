@@ -1,6 +1,6 @@
 # KKS Commission Mundy — Architecture
 
-**Version:** 2.1.0 | **Stack:** Electron 28 · React 18 · SQLite (sql.js WASM) · Tailwind CSS 3 · Vite 5
+**Version:** 2.1.6 | **Stack:** Electron 28 · React 18 · SQLite (sql.js WASM) · Tailwind CSS 3 · Vite 5
 
 ---
 
@@ -176,6 +176,59 @@ app.asar contents:
 ```
 
 ---
+
+## Thermal Receipt Print (80mm / TVS RP 3230)
+
+```
+Electron print: webContents.print({ silent:false, printBackground:true })
+  → no pageSize/margins needed; @page { size:80mm auto } handles the canvas width.
+
+Print isolation (BillPrint.jsx → PrintModal):
+  createPortal(<div id="print-area">, document.body)
+  → makes #print-area a DIRECT <body> child so CSS can target it independently.
+  CSS: body > *:not(#print-area) { display:none } hides the React app tree (#root)
+  without suppressing #print-area — avoids the Chromium print-pipeline blank-output
+  bug that occurs when position:fixed children inherit display:none from a parent.
+
+CSS:
+  @page { size: 80mm auto; margin: 0; }   ← margins moved into #print-area padding
+  #print-area { width: 80mm; padding: 2mm 4mm; box-sizing: border-box; position: fixed; }
+  Content area: 72mm wide (80mm − 4mm left padding − 4mm right padding)
+  table { table-layout: fixed }            ← prevents any column overflowing 72mm
+
+Receipt layout (.rcp class):
+  [LOGO 40px]  Company Name          ← flex-direction: row; logo top-left
+               Address / Phone
+  ─────────────────── (dashed border-top)
+  Bill: BILL-0001     Date: 2026-05-30
+  Client: Name
+  ─────────────────── (dashed border-top)
+  Vegetable name   | 5 Kg   | ₹50.00   ← 3-col (no headers): 48% | 22% | 30%
+                   | @₹10  |          ← rate sub-line in qty column
+  ─────────────────── (dashed border-top)
+  Subtotal:              ₹80.00
+  Commission:          − ₹ 8.00
+  Chit Cost:           − ₹10.00
+  ════════════════════ (solid border-top)
+  NET PAYABLE:           ₹62.00
+  ════════════════════
+       Thank you for your business!
+       உங்கள் வணிகத்திற்கு நன்றி!
+       Visit Again! | மீண்டும் வாருங்கள்!   ← bilingual always, regardless of UI language
+
+Font: Arial / Latha / Noto Sans Tamil (NO monospace — Tamil chars break in Courier New)
+Separators: CSS border-top (NOT ─────.repeat(72) — overflows narrow paper)
+Logo: top-left via flex-direction:row; controlled by print_logo_in_bill config (default: 1)
+```
+
+### Config keys affecting print
+
+| Key | Default | Effect |
+|-----|---------|--------|
+| `print_logo_in_bill` | `'1'` | Show custom logo at top-left of receipt when a logo is uploaded |
+| `company_name` | `'KKS Commission Mundy'` | Printed beside logo |
+| `company_address` | `''` | Printed below company name (omitted if empty) |
+| `company_phone` | `''` | Printed below address (omitted if empty) |
 
 ## Key Design Decisions
 

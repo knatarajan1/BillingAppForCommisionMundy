@@ -56,7 +56,7 @@ const DEFAULT_CONFIGS = [
   { key: 'bill_prefix',          value: 'BILL',                 label: 'Bill Number Prefix' },
   { key: 'currency_symbol',      value: '₹',                   label: 'Currency Symbol' },
   { key: 'theme_color',          value: 'green',                label: 'App Theme Colour' },
-  { key: 'print_logo_in_bill',  value: '0',                    label: 'Print Logo on Bill' },
+  { key: 'print_logo_in_bill',  value: '1',                    label: 'Print Logo on Bill' },
 ]
 
 const SCHEMA = `

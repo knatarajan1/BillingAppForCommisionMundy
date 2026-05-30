@@ -8,6 +8,8 @@ export const UNIT_KEY_MAP = {
   Pcs: 'unit.pcs',
 }
 
+const SHORT_UNIT_LABELS = { Kg: 'Kg', Ton: 'Ton', Box: 'Box', Bag: 'Bag', Pcs: 'Pc' }
+
 export function getUnitOptions(t) {
   return UNIT_VALUES.map(v => ({ value: v, label: t(UNIT_KEY_MAP[v]) }))
 }
@@ -15,4 +17,8 @@ export function getUnitOptions(t) {
 export function getUnitLabel(unit, t) {
   const key = UNIT_KEY_MAP[unit]
   return key ? t(key) : (unit || '')
+}
+
+export function getShortUnitLabel(unit) {
+  return SHORT_UNIT_LABELS[unit] || unit || ''
 }

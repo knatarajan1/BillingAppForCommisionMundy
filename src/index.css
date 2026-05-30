@@ -56,21 +56,184 @@
   .table-cell { @apply px-4 py-3 text-sm text-slate-700 border-t border-slate-100; }
 }
 
-/* ─── Print styles ──────────────────────────────────────────────── */
-@media print {
-  body { background: white; margin: 0; padding: 0; }
-  .no-print { display: none !important; }
-  .print-only { display: block !important; }
-  #print-area {
-    display: block !important;
-    position: fixed;
-    inset: 0;
-    z-index: 9999;
-    background: white;
-    padding: 24px 32px;
-  }
-}
-
+/* ─── Screen: hide print-only area ──────────────────────────────── */
 @media screen {
   #print-area { display: none; }
 }
+
+/* ─── 80mm Thermal Receipt Print (TVS RP 3230 / 3-inch paper) ────── */
+@media print {
+  /*
+   * @page margin: 0 — visual margins come from #print-area padding.
+   * This avoids the page-box vs content-area ambiguity that was clipping
+   * the rightmost 4mm of values on the thermal printer.
+   */
+  @page {
+    size: 80mm auto;
+    margin: 0;
+  }
+
+  /*
+   * Hide all direct body children EXCEPT #print-area.
+   * #print-area is mounted as a portal directly on document.body (see
+   * BillPrint.jsx → createPortal), so it is a DIRECT child of <body> and
+   * is NOT matched by "body > *:not(#print-area)".  This sidesteps the
+   * Chromium print-pipeline quirk where position:fixed descendants of a
+   * display:none parent render as blank.
+   */
+  body > *:not(#print-area) { display: none !important; }
+
+  /* Receipt print area — plain block flow, no position:fixed needed */
+  #print-area {
+    display: block !important;
+    width: 100% !important;       /* 100% of @page = 80mm */
+    padding: 2mm 4mm !important;  /* visual margins; box includes padding */
+    margin: 0 !important;
+    box-sizing: border-box !important;
+    background: white !important;
+  }
+
+  .no-print { display: none !important; }
+
+  /* Receipt typography overrides for print */
+  .rcp            { font-size: 10pt !important; width: 100% !important; }
+  .rcp-co-name    { font-size: 11pt !important; }
+  .rcp-meta       { font-size: 9pt  !important; }
+  .rcp-row        { font-size: 9pt  !important; }
+  /* table-layout:fixed prevents any column from overflowing 72mm */
+  .rcp table      { font-size: 9pt  !important; table-layout: fixed !important; width: 100% !important; }
+  .rcp .col-hdr   { font-size: 8pt  !important; }
+  .rcp .item-sub  { font-size: 8pt  !important; }
+  /* Allow qty cell to wrap (rate sub-line shown below quantity) */
+  .rcp .col-qty   { white-space: normal !important; }
+  .rcp-totals     { font-size: 9pt  !important; }
+  .rcp-net        { font-size: 11pt !important; }
+  .rcp-footer     { font-size: 9pt  !important; }
+
+  /* Logo: force block display and print with exact colors */
+  .rcp-logo {
+    display: block !important;
+    width: 40px !important;
+    height: 40px !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Ensure flex header stays as a row (logo left, company name right) */
+  .rcp-header {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: flex-start !important;
+  }
+}
+
+/* ─── Receipt component styles (screen + print) ─────────────────── */
+
+/* Outer wrapper */
+.rcp {
+  font-family: Arial, 'Latha', 'Noto Sans Tamil', 'Segoe UI', sans-serif;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #000;
+  width: 100%;
+}
+
+/* Header: logo left + company name right */
+.rcp-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.rcp-logo {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+.rcp-co { flex: 1; min-width: 0; }
+.rcp-co-name {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.25;
+  word-break: break-word;
+}
+.rcp-co-sub {
+  font-size: 10px;
+  color: #555;
+  margin-top: 1px;
+  word-break: break-word;
+}
+
+/* Dividers */
+.rcp-div  { border: none; border-top: 1px dashed #555; margin: 4px 0; }
+.rcp-div2 { border: none; border-top: 2px solid  #000; margin: 4px 0; }
+
+/* Bill meta (Bill#, Date, Client) */
+.rcp-meta { font-size: 11px; margin-bottom: 3px; word-break: break-word; }
+.rcp-kv   {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 11px;
+  margin-bottom: 1px;
+}
+.rcp-kv .k { font-weight: 600; flex-shrink: 0; }
+.rcp-kv .v { text-align: right; word-break: break-all; }
+
+/* Items table */
+.rcp table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  margin: 2px 0;
+}
+.rcp table .col-hdr {
+  font-weight: 700;
+  font-size: 10px;
+  border-bottom: 1px solid #000;
+  padding: 1px 2px;
+  vertical-align: bottom;
+}
+.rcp table td {
+  padding: 2px 2px;
+  vertical-align: top;
+  word-break: break-word;
+}
+.rcp .col-item  { width: 48%; }
+.rcp .col-qty   { width: 22%; text-align: right; white-space: nowrap; }
+.rcp .col-price { width: 30%; text-align: right; white-space: nowrap; font-weight: 600; }
+.rcp .item-sub  { font-size: 9px; color: #555; }
+
+/* Totals rows */
+.rcp-totals { font-size: 11px; }
+.rcp-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6px;
+  padding: 1px 0;
+  font-size: 11px;
+}
+.rcp-row .lbl { flex: 1; min-width: 0; word-break: break-word; }
+.rcp-row .amt { flex-shrink: 0; font-weight: 600; white-space: nowrap; }
+
+/* Net payable total */
+.rcp-net {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 3px 0;
+}
+
+/* Footer */
+.rcp-footer {
+  text-align: center;
+  font-size: 10px;
+  margin-top: 8px;
+  color: #333;
+}
+.rcp-footer p { margin: 2px 0; }

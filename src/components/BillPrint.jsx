@@ -1,101 +1,116 @@
-import { useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { X, Printer } from 'lucide-react'
 import { useLanguage } from '../lib/LanguageContext'
-import { getUnitLabel } from '../lib/units'
+import { getShortUnitLabel } from '../lib/units'
 
-const DASH  = '─'.repeat(72)
-const THICK = '═'.repeat(72)
+/**
+ * Thermal receipt print for TVS RP 3230 (3-inch / 80mm paper).
+ *
+ * Print isolation strategy:
+ *  - PrintModal mounts #print-area via createPortal(…, document.body)
+ *    so it is a DIRECT <body> child in the DOM.
+ *  - CSS: body > *:not(#print-area) { display:none } hides everything else
+ *    without touching #print-area, avoiding the Chromium print-pipeline
+ *    bug where position:fixed children of display:none parents render blank.
+ *
+ * Layout (72mm content = 80mm page − 4mm padding each side):
+ *  - Logo 40px top-left, company name to the right (flex row)
+ *  - Items: 3-column table (no headers) — 48% item | 22% qty+rate | 30% total
+ *  - Rate shown as sub-line under qty in the qty column
+ */
 
 /* ─── Client Bill ─────────────────────────────────────────────── */
 export function ClientBillPrint({ bill, config, onClose }) {
   const { t, logo } = useLanguage()
-  const company      = config.company_name    || 'KKS Commission Mundy'
-  const currency     = config.currency_symbol || '₹'
-  const showLogo     = config.print_logo_in_bill === '1' && !!logo
+  const company  = config.company_name    || 'KKS Commission Mundy'
+  const addr     = config.company_address || ''
+  const phone    = config.company_phone   || ''
+  const currency = config.currency_symbol || '₹'
+  const showLogo = config.print_logo_in_bill === '1' && !!logo
 
-  function fmtC(n) { return `${currency}${parseFloat(n || 0).toFixed(2)}` }
+  const fmt = n => `${currency}${parseFloat(n || 0).toFixed(2)}`
 
   return (
     <PrintModal onClose={onClose} title={t('print.clientBill')}>
-      <div className="font-mono text-sm leading-relaxed">
-        {/* Header */}
-        <div className="text-center mb-4">
-          {showLogo && (
-            <img src={logo} alt="logo" className="mx-auto mb-2 h-16 w-16 object-contain" />
-          )}
-          <p className="text-xl font-bold tracking-widest uppercase">{company}</p>
+      <div className="rcp">
+
+        {/* ── Header: logo (top-left) + company name ── */}
+        <div className="rcp-header">
+          {showLogo && <img className="rcp-logo" src={logo} alt="" />}
+          <div className="rcp-co">
+            <div className="rcp-co-name">{company}</div>
+            {addr  && <div className="rcp-co-sub">{addr}</div>}
+            {phone && <div className="rcp-co-sub">{t('print.phone')}: {phone}</div>}
+          </div>
         </div>
 
-        {/* Meta */}
-        <div className="flex justify-between mb-1">
-          <span><strong>{t('print.billNo')}:</strong> {bill.billNumber}</span>
-          <span><strong>{t('print.date')}:</strong> {bill.date}</span>
+        <hr className="rcp-div" />
+
+        {/* ── Bill info ── */}
+        <div className="rcp-kv">
+          <span className="k">{t('print.billNo')}:</span>
+          <span className="v" style={{fontWeight:700}}>{bill.billNumber}</span>
         </div>
-        <div className="mb-3">
-          <span><strong>{t('print.client')}:</strong> {bill.clientName}</span>
+        <div className="rcp-kv">
+          <span className="k">{t('print.date')}:</span>
+          <span className="v">{bill.date}</span>
+        </div>
+        <div className="rcp-meta">
+          <span style={{fontWeight:600}}>{t('print.client')}:</span> {bill.clientName}
         </div>
 
-        <p className="text-slate-400 mb-0">{DASH}</p>
+        <hr className="rcp-div" />
 
-        {/* Table header */}
-        <table className="w-full text-sm mb-0">
-          <thead>
-            <tr className="font-bold">
-              <td className="w-6 py-1">#</td>
-              <td className="py-1">{t('print.vegetable')}</td>
-              <td className="py-1">{t('print.vendor')}</td>
-              <td className="py-1 text-right">{t('print.units')}</td>
-              <td className="py-1 text-right">{t('print.rate')}</td>
-              <td className="py-1 text-right">{t('print.price')}</td>
-            </tr>
-          </thead>
+        {/* ── Items table (no headers) ── */}
+        <table>
           <tbody>
             {(bill.items || []).map((item, i) => (
               <tr key={i}>
-                <td className="py-0.5 text-slate-500">{i + 1}</td>
-                <td className="py-0.5">{item.vegetableName}</td>
-                <td className="py-0.5">{item.vendorName}</td>
-                <td className="py-0.5 text-right">{item.units} {getUnitLabel(item.unitType, t)}</td>
-                <td className="py-0.5 text-right">{fmtC(item.rate)}</td>
-                <td className="py-0.5 text-right">{fmtC(item.price)}</td>
+                <td className="col-item">{item.vegetableName}</td>
+                <td className="col-qty">
+                  {item.units} {getShortUnitLabel(item.unitType)}
+                  <div className="item-sub">@ {fmt(item.rate)}</div>
+                </td>
+                <td className="col-price">{fmt(item.price)}</td>
               </tr>
             ))}
           </tbody>
         </table>
 
-        <p className="text-slate-400 mt-0 mb-1">{DASH}</p>
+        <hr className="rcp-div" />
 
-        {/* Totals */}
-        <div className="space-y-0.5 text-sm">
-          <div className="flex justify-between">
-            <span>{t('print.subTotal')}:</span>
-            <span>{fmtC(bill.subTotal)}</span>
+        {/* ── Totals ── */}
+        <div className="rcp-totals">
+          <div className="rcp-row">
+            <span className="lbl">{t('print.subTotal')}:</span>
+            <span className="amt">{fmt(bill.subTotal)}</span>
           </div>
-          <div className="flex justify-between">
-            <span>{t('print.commission')} ({bill.commissionRate}%):</span>
-            <span>− {fmtC(bill.commissionAmount)}</span>
+          <div className="rcp-row">
+            <span className="lbl">{t('print.commission')}:</span>
+            <span className="amt" style={{color:'#c00'}}>− {fmt(bill.commissionAmount)}</span>
           </div>
-          <div className="flex justify-between">
-            <span>{t('print.chitCost')} ({bill.itemCount} {t('print.records')} × {fmtC(bill.chitCostPerRecord)}):</span>
-            <span>− {fmtC(bill.totalChitCost)}</span>
+          <div className="rcp-row">
+            <span className="lbl">{t('print.chitCost')}:</span>
+            <span className="amt" style={{color:'#c00'}}>− {fmt(bill.totalChitCost)}</span>
           </div>
         </div>
 
-        <p className="text-slate-400 my-1">{DASH}</p>
+        <hr className="rcp-div2" />
 
-        {/* Net */}
-        <div className="flex justify-between font-bold text-base">
+        {/* ── Net payable ── */}
+        <div className="rcp-net">
           <span>{t('print.netPayable')}:</span>
-          <span>{fmtC(bill.netAmount)}</span>
+          <span style={{color: bill.netAmount < 0 ? '#c00' : '#000'}}>{fmt(bill.netAmount)}</span>
         </div>
 
-        <p className="text-slate-400 my-1">{DASH}</p>
+        <hr className="rcp-div2" />
 
-        {/* Footer */}
-        <div className="text-center text-xs text-slate-500 mt-3">
+        {/* ── Footer ── */}
+        <div className="rcp-footer">
           <p>{t('print.thankYou')}</p>
-          <p>{company}</p>
+          <p><strong>{t('print.visitAgain')}</strong></p>
         </div>
+
       </div>
     </PrintModal>
   )
@@ -104,76 +119,85 @@ export function ClientBillPrint({ bill, config, onClose }) {
 /* ─── Vendor Bill ─────────────────────────────────────────────── */
 export function VendorBillPrint({ bill, config, onClose }) {
   const { t, logo } = useLanguage()
-  const company      = config.company_name    || 'KKS Commission Mundy'
-  const currency     = config.currency_symbol || '₹'
-  const showLogo     = config.print_logo_in_bill === '1' && !!logo
+  const company  = config.company_name    || 'KKS Commission Mundy'
+  const addr     = config.company_address || ''
+  const phone    = config.company_phone   || ''
+  const currency = config.currency_symbol || '₹'
+  const showLogo = config.print_logo_in_bill === '1' && !!logo
 
-  function fmtC(n) { return `${currency}${parseFloat(n || 0).toFixed(2)}` }
+  const fmt = n => `${currency}${parseFloat(n || 0).toFixed(2)}`
 
   return (
     <PrintModal onClose={onClose} title={t('print.vendorBill')}>
-      <div className="font-mono text-sm leading-relaxed">
-        {/* Header */}
-        <div className="text-center mb-4">
-          {showLogo && (
-            <img src={logo} alt="logo" className="mx-auto mb-2 h-16 w-16 object-contain" />
-          )}
-          <p className="text-xl font-bold tracking-widest uppercase">{company}</p>
-          <p className="text-sm tracking-widest uppercase text-slate-600">{t('print.vendorBill')}</p>
+      <div className="rcp">
+
+        {/* ── Header: logo (top-left) + company name ── */}
+        <div className="rcp-header">
+          {showLogo && <img className="rcp-logo" src={logo} alt="" />}
+          <div className="rcp-co">
+            <div className="rcp-co-name">{company}</div>
+            {addr  && <div className="rcp-co-sub">{addr}</div>}
+            {phone && <div className="rcp-co-sub">{t('print.phone')}: {phone}</div>}
+          </div>
         </div>
 
-        {/* Meta */}
-        <div className="flex justify-between mb-1">
-          <span><strong>{t('print.vendor')}:</strong> {bill.vendorName}</span>
-          <span><strong>{t('print.date')}:</strong> {bill.date}</span>
+        <hr className="rcp-div2" />
+
+        {/* ── Vendor info ── */}
+        <div className="rcp-meta" style={{fontWeight:700, fontSize:'13px'}}>
+          {t('print.vendorBill')}
+        </div>
+        <div className="rcp-kv">
+          <span className="k">{t('print.vendor')}:</span>
+          <span className="v" style={{fontWeight:600}}>{bill.vendorName}</span>
         </div>
         {bill.vendorPhone && (
-          <div className="mb-3">
-            <span><strong>{t('print.phone')}:</strong> {bill.vendorPhone}</span>
+          <div className="rcp-kv">
+            <span className="k">{t('print.phone')}:</span>
+            <span className="v">{bill.vendorPhone}</span>
+          </div>
+        )}
+        {bill.date && (
+          <div className="rcp-kv">
+            <span className="k">{t('print.date')}:</span>
+            <span className="v">{bill.date}</span>
           </div>
         )}
 
-        <p className="text-slate-400 mb-0">{THICK}</p>
+        <hr className="rcp-div2" />
 
-        {/* Table header */}
-        <table className="w-full text-sm mb-0">
-          <thead>
-            <tr className="font-bold">
-              <td className="w-6 py-1">#</td>
-              <td className="py-1">{t('print.billNo')}</td>
-              <td className="py-1">{t('print.vegetable')}</td>
-              <td className="py-1 text-right">{t('print.units')}</td>
-              <td className="py-1 text-right">{t('print.rate')}</td>
-              <td className="py-1 text-right">{t('print.price')}</td>
-            </tr>
-          </thead>
+        {/* ── Items table (no headers; bill# kept in DB, not printed) ── */}
+        <table>
           <tbody>
             {(bill.items || []).map((item, i) => (
               <tr key={i}>
-                <td className="py-0.5 text-slate-500">{i + 1}</td>
-                <td className="py-0.5 text-brand-700">{item.billNumber}</td>
-                <td className="py-0.5">{item.vegetableName}</td>
-                <td className="py-0.5 text-right">{item.units} {getUnitLabel(item.unitType, t)}</td>
-                <td className="py-0.5 text-right">{fmtC(item.rate)}</td>
-                <td className="py-0.5 text-right">{fmtC(item.price)}</td>
+                <td className="col-item">{item.vegetableName}</td>
+                <td className="col-qty">
+                  {item.units} {getShortUnitLabel(item.unitType)}
+                  <div className="item-sub">@ {fmt(item.rate)}</div>
+                </td>
+                <td className="col-price">{fmt(item.price)}</td>
               </tr>
             ))}
           </tbody>
         </table>
 
-        <p className="text-slate-400 mt-0 mb-1">{THICK}</p>
+        <hr className="rcp-div2" />
 
-        {/* Total */}
-        <div className="flex justify-between font-bold text-base">
+        {/* ── Grand total ── */}
+        <div className="rcp-net">
           <span>{t('print.totalBillValue')}:</span>
-          <span>{fmtC(bill.totalAmount)}</span>
+          <span>{fmt(bill.totalAmount)}</span>
         </div>
 
-        {/* Footer */}
-        <div className="text-center text-xs text-slate-500 mt-4">
+        <hr className="rcp-div2" />
+
+        {/* ── Footer ── */}
+        <div className="rcp-footer">
           <p>{t('print.thankYou')}</p>
-          <p>{company}</p>
+          <p><strong>{t('print.visitAgain')}</strong></p>
         </div>
+
       </div>
     </PrintModal>
   )
@@ -183,39 +207,43 @@ export function VendorBillPrint({ bill, config, onClose }) {
 function PrintModal({ title, children, onClose }) {
   const { t } = useLanguage()
 
-  function handlePrint() { window.print() }
-
   return (
     <>
-      {/* Screen overlay */}
+      {/* Screen overlay — hidden during print via .no-print */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 no-print">
         <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-        <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-          {/* Modal toolbar */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-            <h2 className="text-base font-semibold text-slate-800">{title} {t('print.preview')}</h2>
+        <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm max-h-[90vh] flex flex-col">
+          {/* Toolbar */}
+          <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
+            <h2 className="text-sm font-semibold text-slate-800">{title} — {t('print.preview')}</h2>
             <div className="flex items-center gap-2">
-              <button className="btn-primary py-1.5 text-xs" onClick={handlePrint}>
-                <Printer size={14} /> {t('print.print')}
+              <button className="btn-primary py-1 text-xs" onClick={() => window.print()}>
+                <Printer size={13} /> {t('print.print')}
               </button>
               <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500">
-                <X size={16} />
+                <X size={15} />
               </button>
             </div>
           </div>
-          {/* Bill preview */}
-          <div className="overflow-y-auto flex-1 p-8 bg-slate-50">
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-8 max-w-lg mx-auto">
+          {/* Preview — narrow to match 80mm paper */}
+          <div className="overflow-y-auto flex-1 p-4 bg-slate-50">
+            <div className="bg-white border border-slate-200 rounded-lg p-4 mx-auto" style={{maxWidth:'280px'}}>
               {children}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Print-only area */}
-      <div id="print-area">
-        <div className="p-8">{children}</div>
-      </div>
+      {/*
+       * Print-only area — portaled directly onto document.body.
+       * This makes #print-area a DIRECT <body> child so the CSS rule
+       * "body > *:not(#print-area) { display:none }" hides everything
+       * else without suppressing #print-area's rendering.
+       */}
+      {createPortal(
+        <div id="print-area">{children}</div>,
+        document.body
+      )}
     </>
   )
 }

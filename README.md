@@ -1,6 +1,6 @@
 # KKS Commission Mundy
 
-Agricultural Commission Management Desktop Application — v2.1.0
+Agricultural Commission Management Desktop Application — v2.1.6
 
 ## Overview
 
@@ -257,6 +257,48 @@ where:
 ---
 
 ## Changelog
+
+### v2.1.6
+- Removed: dotted `border-top` line above footer in both client and vendor bill receipts
+- Fixed: footer language now follows the app language setting — English UI shows "Thank you for your business! / Visit Again!", Tamil UI shows "உங்கள் வணிகத்திற்கு நன்றி! / மீண்டும் வாருங்கள்!" (reverted the always-bilingual approach)
+- No database changes
+
+### v2.1.5
+- Fixed: blank paper output — `position:fixed` children of `display:none` parents render as empty in Chromium's print pipeline; switched to `createPortal(…, document.body)` so `#print-area` is a direct `<body>` child; CSS rule changed from `body > * { display:none }` to `body > *:not(#print-area) { display:none }` — no `position:fixed` needed
+- Fixed: `pageSize`/`marginType` removed from `webContents.print()` — no longer needed with portal approach; `@page { size:80mm auto }` handles the rendering canvas
+- Fixed: rate per unit missing from item rows on both client and vendor bills — now shown as `@ ₹X.XX` sub-line below quantity in the qty column
+- Changed: column widths adjusted — item 48%, qty 22%, price 30% (was 52%/20%/28%) to give rate sub-line sufficient room
+- No database changes — `rate` was already stored in `TransactionItems` and returned by both `getClientBills` and `getVendorBills`
+
+### v2.1.4
+- Removed: column headers from items table on both client and vendor bills (cleaner thermal output)
+- Removed: vendor name sub-row from client bill items (vegetable only, no sub-line)
+- Removed: bill# sub-row from vendor bill items (bill reference kept in database for audit)
+- Removed: shop name line from receipt footers (both bills)
+- Changed: unit labels shortened for print — Kilogram→Kg, Pieces→Pc (Ton/Box/Bag unchanged); uses new `getShortUnitLabel()` helper in units.js
+- Changed: commission label simplified from "Commission (10%):" to "Commission:"
+- Changed: chit label simplified from "Chit Cost (2 × ₹5.00):" to "Chit Cost:" (amount unchanged)
+- No database schema changes — all removed fields remain stored in TransactionItems
+
+### v2.1.3
+- Fixed: receipt columns collapsed to single-word-per-line due to Chromium rendering at screen viewport width (1366 px) instead of 80mm — root cause was `webContents.print()` missing `pageSize`
+- Fixed: added `pageSize: { width: 80000, height: 3000000 }` and `marginType: 'none'` to Electron print call so Chromium renders the print canvas at exactly 80mm
+- Fixed: `#print-area { width: 80mm; padding: 2mm 4mm; box-sizing: border-box }` — explicit absolute width removes dependency on viewport ICB; padding replaces `@page` margin that was causing margin-zone clipping
+- Fixed: `@page { margin: 0 }` — eliminates the content-area vs page-box ambiguity that clipped the rightmost 4mm of values
+- Fixed: `table { table-layout: fixed }` in print — prevents any column from overflowing the 72mm content area
+- Fixed: `flex-direction: row` explicitly set in print CSS — ensures logo stays left, company name stays right
+- Fixed: logo `print-color-adjust: exact` — base64 logo now renders correctly in print output
+- Added: bilingual receipt footer — "Thank you for your business! / உங்கள் வணிகத்திற்கு நன்றி!" and "Visit Again! | மீண்டும் வாருங்கள்!" always shown on every receipt regardless of UI language
+- Changed: `print_logo_in_bill` default changed from `'0'` to `'1'` — logo prints by default when a logo is uploaded
+
+### v2.1.2
+- Fixed: thermal receipt layout for TVS RP 3230 (3-inch / 80mm paper)
+  - `@page { size: 80mm auto; }` — prevents right-side truncation
+  - Replaced `font-mono` with Arial/Latha (Tamil Unicode rendering was broken)
+  - Replaced 72-char separator lines with CSS `border-top` (no overflow)
+  - Redesigned items to 3-column table: Item+Vendor | Qty | Price
+  - Logo moved to top-left beside company name (was centered and oversized)
+- Added: "Visit Again! / மீண்டும் வாருங்கள்!" in both bill receipt footers
 
 ### v2.1.1
 - Fixed: copy/paste/cut and select-all-then-delete in Tamil text fields

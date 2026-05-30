@@ -211,6 +211,7 @@ export const translations = {
     'print.netPayable': 'NET PAYABLE',
     'print.totalBillValue': 'TOTAL BILL VALUE',
     'print.thankYou': 'Thank you for your business!',
+    'print.visitAgain': 'Visit Again!',
     'print.phone': 'Phone',
   },
 
@@ -426,6 +427,7 @@ export const translations = {
     'print.netPayable': 'நிகர செலுத்தவேண்டியது',
     'print.totalBillValue': 'மொத்த பில் மதிப்பு',
     'print.thankYou': 'உங்கள் வணிகத்திற்கு நன்றி!',
+    'print.visitAgain': 'மீண்டும் வாருங்கள்!',
     'print.phone': 'தொலைபேசி',
   },
 }
