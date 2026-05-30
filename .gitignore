@@ -1,0 +1,10 @@
+node_modules/
+dist/
+release/
+*.db
+*.xlsx
+*.log
+*.txt
+test-*.js
+KKS-Commission-Mundy-v2-Windows/
+.claude/

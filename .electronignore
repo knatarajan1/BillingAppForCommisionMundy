@@ -1,0 +1,7 @@
+.gitignore
+.electronignore
+*.log
+*.txt
+test-*.js
+release/
+.claude/
