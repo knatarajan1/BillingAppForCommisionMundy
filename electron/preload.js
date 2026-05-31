@@ -35,8 +35,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getAll:         ()                => invoke('transactions:getAll'),
     getByDate:      (date)            => invoke('transactions:getByDate', date),
     getById:        (id)              => invoke('transactions:getById', id),
-    getClientBills: (clientId, date)  => invoke('transactions:getClientBills', clientId, date),
-    getVendorBills: (vendorId, date)  => invoke('transactions:getVendorBills', vendorId, date),
+    getClientBills:  (clientId, date)           => invoke('transactions:getClientBills', clientId, date),
+    getVendorBills:  (vendorId, date)           => invoke('transactions:getVendorBills', vendorId, date),
+    getVendorSummary: (fromDate, toDate)        => invoke('transactions:getVendorSummary', fromDate, toDate),
   },
   db: {
     clearData: () => invoke('db:clearData'),

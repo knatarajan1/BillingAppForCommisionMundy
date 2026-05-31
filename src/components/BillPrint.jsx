@@ -203,6 +203,83 @@ export function VendorBillPrint({ bill, config, onClose }) {
   )
 }
 
+/* ─── Vendor Payment Summary Receipt ─────────────────────────── */
+export function VendorSummaryPrint({ data, config, onClose }) {
+  const { t, logo } = useLanguage()
+  const company  = config.company_name    || 'KKS Commission Mundy'
+  const addr     = config.company_address || ''
+  const phone    = config.company_phone   || ''
+  const currency = config.currency_symbol || '₹'
+  const showLogo = config.print_logo_in_bill === '1' && !!logo
+
+  const fmt = n => `${currency}${parseFloat(n || 0).toFixed(2)}`
+  const grandTotal = data.rows.reduce((s, r) => s + (parseFloat(r.totalAmount) || 0), 0)
+
+  return (
+    <PrintModal onClose={onClose} title={t('print.vendorSummary')}>
+      <div className="rcp">
+
+        {/* ── Header ── */}
+        <div className="rcp-header">
+          {showLogo && <img className="rcp-logo" src={logo} alt="" />}
+          <div className="rcp-co">
+            <div className="rcp-co-name">{company}</div>
+            {addr  && <div className="rcp-co-sub">{addr}</div>}
+            {phone && <div className="rcp-co-sub">{t('print.phone')}: {phone}</div>}
+          </div>
+        </div>
+
+        <hr className="rcp-div2" />
+
+        <div className="rcp-meta" style={{fontWeight:700, fontSize:'13px'}}>
+          {t('print.vendorSummary')}
+        </div>
+        {(data.fromDate || data.toDate) && (
+          <div className="rcp-kv">
+            <span className="k">{t('print.date')}:</span>
+            <span className="v">{data.fromDate || '—'} → {data.toDate || '—'}</span>
+          </div>
+        )}
+
+        <hr className="rcp-div2" />
+
+        {/* ── Vendor rows: name | amount (2-column) ── */}
+        <table>
+          <tbody>
+            {data.rows.map((row, i) => (
+              <tr key={i}>
+                <td style={{width:'65%', padding:'2px 2px', verticalAlign:'top', wordBreak:'break-word'}}>
+                  {row.vendorName}
+                </td>
+                <td style={{width:'35%', textAlign:'right', padding:'2px 2px', fontWeight:600, whiteSpace:'nowrap'}}>
+                  {fmt(row.totalAmount)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <hr className="rcp-div2" />
+
+        {/* ── Grand total ── */}
+        <div className="rcp-net">
+          <span>{t('print.totalPayable')}:</span>
+          <span>{fmt(grandTotal)}</span>
+        </div>
+
+        <hr className="rcp-div2" />
+
+        {/* ── Footer ── */}
+        <div className="rcp-footer">
+          <p>{t('print.thankYou')}</p>
+          <p><strong>{t('print.visitAgain')}</strong></p>
+        </div>
+
+      </div>
+    </PrintModal>
+  )
+}
+
 /* ─── Shared print modal wrapper ──────────────────────────────── */
 function PrintModal({ title, children, onClose }) {
   const { t } = useLanguage()

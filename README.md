@@ -4,7 +4,7 @@ Agricultural Commission Management Desktop Application — v2.1.6
 
 ## Overview
 
-KKS Commission Mundy is a Windows desktop app (Electron + React) for managing agricultural commission transactions. It tracks clients, vendors, vegetables, and generates bills with automatic commission and chit cost calculations.
+KKS Commission Mundy is a Windows desktop app (Electron + React) for managing agricultural commission transactions. It tracks farmers, vendors, vegetables, and generates bills with automatic commission and chit cost calculations.
 
 **v2.1 changes from v2.0:**
 - **Tamil language support** — switch the entire UI to Tamil via Configuration tab
@@ -12,7 +12,7 @@ KKS Commission Mundy is a Windows desktop app (Electron + React) for managing ag
 - **Dropdown values translated** — unit type options and all table values shown in Tamil when Tamil mode is active
 - **Bill print translated** — print receipts in Tamil when Tamil mode is active
 - **App logo customisation** — upload a custom PNG/JPG logo via Configuration; replaces the sidebar icon
-- **Clear All Data** — wipe all transaction/client/vendor/vegetable data with automatic timestamped backup
+- **Clear All Data** — wipe all transaction/farmer/vendor/vegetable data with automatic timestamped backup
 
 ---
 
@@ -212,7 +212,7 @@ When Tamil mode is active, **all text fields** accept English phonetics and conv
 |-------|-------------|
 | `Config` | App settings (company name, commission rate, language, logo, theme…) |
 | `Vegetables` | Vegetable master (id, name, unit) |
-| `Clients` | Client master (id, name, phone, address) |
+| `Clients` | Farmer master (id, name, phone, address) |
 | `Vendors` | Vendor master (id, name, phone, address) |
 | `Transactions` | Bill header (bill number, client, date, totals) |
 | `TransactionItems` | Bill line items (vegetable, vendor, qty, rate, price) |
@@ -234,11 +234,11 @@ Before clearing, a timestamped backup is auto-saved to:
 
 | Module | Description |
 |--------|-------------|
-| **Billing** | Create transactions — select client, add vegetable/vendor line items, auto-calculate commission and chit costs |
+| **Billing** | Create transactions — select farmer, add vegetable/vendor line items, auto-calculate commission and chit costs |
 | **Vegetables** | Manage vegetable master list with unit types |
-| **Clients** | Manage client master list |
+| **Farmers** | Manage farmer master list |
 | **Vendors** | Manage vendor master list |
-| **Reports** | Filter client bills or vendor bills by date; printable receipts |
+| **Reports** | Filter farmer bills or vendor bills by date; printable receipts; vendor payment summary receipt |
 | **Configuration** | Language, logo, theme colour, company details, billing parameters, clear data |
 
 ---
@@ -257,6 +257,18 @@ where:
 ---
 
 ## Changelog
+
+### v2.1.8
+- New: **Vendor Payment Summary** — third tab in Reports showing each vendor's total payable amount (only vendors with amount > 0)
+- New: From Date / To Date filter for the vendor summary (date range, both optional)
+- New: Printable thermal receipt for the vendor summary (80mm paper, 2-column: vendor name | amount)
+- New IPC channel: `transactions:getVendorSummary(fromDate, toDate)`
+- No database schema changes — aggregates existing `TransactionItems.price` via `SUM + GROUP BY vendor`
+
+### v2.1.7
+- Changed: UI label "Client" renamed to "Farmer" throughout (English and Tamil) — English: Client → Farmer, Tamil: வாடிக்கையாளர் → விவசாயி
+- Changed: Vendor Tamil label updated — விற்பனையாளர் → வியாபாரி (English label "Vendor" unchanged)
+- No database schema changes — internal table names `Clients` and `Vendors` are unchanged
 
 ### v2.1.6
 - Removed: dotted `border-top` line above footer in both client and vendor bill receipts

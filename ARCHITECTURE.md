@@ -1,6 +1,6 @@
 # KKS Commission Mundy — Architecture
 
-**Version:** 2.1.6 | **Stack:** Electron 28 · React 18 · SQLite (sql.js WASM) · Tailwind CSS 3 · Vite 5
+**Version:** 2.1.8 | **Stack:** Electron 28 · React 18 · SQLite (sql.js WASM) · Tailwind CSS 3 · Vite 5
 
 ---
 
@@ -55,7 +55,7 @@ App.jsx
         │
         ├── Reports.jsx
         │   ├── Translated unit labels in tables
-        │   ├── ClientBillPrint / VendorBillPrint
+        │   ├── ClientBillPrint / VendorBillPrint / VendorSummaryPrint
         │   └── (logo shown if print_logo_in_bill=1)
         │
         └── Settings.jsx
@@ -76,11 +76,12 @@ App.jsx
 | `config:getAll` | `db.getAllConfigs()` | Load all settings as key-value map |
 | `config:update` | `db.updateConfig()` | UPSERT a single config key |
 | `vegetables:getAll/add/update/delete` | sqliteService | Vegetable CRUD |
-| `clients:getAll/add/update/delete` | sqliteService | Client CRUD |
+| `clients:getAll/add/update/delete` | sqliteService | Farmer CRUD |
 | `vendors:getAll/add/update/delete` | sqliteService | Vendor CRUD |
 | `transactions:save` | `db.saveTransaction()` | Atomic bill save (BEGIN/COMMIT) |
 | `transactions:getClientBills` | sqliteService | Bills filtered by client/date |
-| `transactions:getVendorBills` | sqliteService | Vendor items grouped by vendor/date |
+| `transactions:getVendorBills`   | sqliteService | Vendor items grouped by vendor/date |
+| `transactions:getVendorSummary` | sqliteService | SUM(price) per vendor, HAVING > 0, optional date range |
 | `db:clearData` | `db.clearAllData()` | Backup DB then DELETE FROM all data tables |
 | `db:getPath` | `db.getDbPath()` | Return DB file path for diagnostics |
 | `app:pickLogo` | `dialog.showOpenDialog()` | File picker → returns base64 data URL |
@@ -201,7 +202,7 @@ Receipt layout (.rcp class):
                Address / Phone
   ─────────────────── (dashed border-top)
   Bill: BILL-0001     Date: 2026-05-30
-  Client: Name
+  Farmer: Name
   ─────────────────── (dashed border-top)
   Vegetable name   | 5 Kg   | ₹50.00   ← 3-col (no headers): 48% | 22% | 30%
                    | @₹10  |          ← rate sub-line in qty column

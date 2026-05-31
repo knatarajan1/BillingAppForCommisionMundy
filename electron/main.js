@@ -101,8 +101,9 @@ handle('transactions:save',           (data)            => db.saveTransaction(da
 handle('transactions:getAll',         ()                => db.getAllTransactions())
 handle('transactions:getByDate',      (date)            => db.getTransactionsByDate(date))
 handle('transactions:getById',        (id)              => db.getTransactionById(id))
-handle('transactions:getClientBills', (clientId, date)  => db.getClientBills(clientId, date))
-handle('transactions:getVendorBills', (vendorId, date)  => db.getVendorBills(vendorId, date))
+handle('transactions:getClientBills',  (clientId, date)          => db.getClientBills(clientId, date))
+handle('transactions:getVendorBills',  (vendorId, date)          => db.getVendorBills(vendorId, date))
+handle('transactions:getVendorSummary', (fromDate, toDate)       => db.getVendorSummary(fromDate, toDate))
 
 // ─── Database management ─────────────────────────────────────────
 handle('db:clearData', () => db.clearAllData())

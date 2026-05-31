@@ -445,6 +445,29 @@ function getVendorBills(vendorId, date) {
   }))
 }
 
+function getVendorSummary(fromDate, toDate) {
+  let sql = `
+    SELECT ti.vendor_id, ti.vendor_name,
+           COALESCE(v.phone, '') AS vendor_phone,
+           ROUND(SUM(ti.price), 2) AS total_amount
+    FROM TransactionItems ti
+    LEFT JOIN Vendors v ON v.vendor_id = ti.vendor_id
+    WHERE 1=1`
+  const params = []
+  if (fromDate) { sql += ' AND ti.date >= ?'; params.push(fromDate) }
+  if (toDate)   { sql += ' AND ti.date <= ?'; params.push(toDate) }
+  sql += `
+    GROUP BY ti.vendor_id, ti.vendor_name
+    HAVING SUM(ti.price) > 0
+    ORDER BY ti.vendor_name ASC`
+  return all(sql, params).map(r => ({
+    vendorId: r.vendor_id,
+    vendorName: r.vendor_name,
+    vendorPhone: r.vendor_phone,
+    totalAmount: r.total_amount,
+  }))
+}
+
 function mapTxn(r) {
   return {
     transactionId: r.transaction_id, billNumber: r.bill_number,
@@ -472,5 +495,5 @@ module.exports = {
   getAllClients, addClient, updateClient, deleteClient,
   getAllVendors, addVendor, updateVendor, deleteVendor,
   saveTransaction, getAllTransactions, getTransactionsByDate,
-  getTransactionById, getClientBills, getVendorBills,
+  getTransactionById, getClientBills, getVendorBills, getVendorSummary,
 }
