@@ -33,6 +33,88 @@ KKS Commission Mundy is a Windows desktop app (Electron + React) for managing ag
 
 ---
 
+## For End Users
+
+No installation, no git, no coding required.
+
+### Prerequisites
+
+- Windows 7 or later (32-bit or 64-bit)
+- Nothing else — SQLite, Node.js, and all dependencies are bundled inside the app
+
+### Steps
+
+1. Download and extract `KKS-Commission-Mundy-v2.3.1.zip`
+2. Check your Windows type: right-click **This PC** → **Properties** → look for **System type**
+3. Open the matching folder:
+   - **64-bit Windows** → open `64-bit\` → double-click `KKS Commission Mundy.exe`
+   - **32-bit Windows** → open `32-bit\` → double-click `KKS Commission Mundy.exe`
+4. If Windows SmartScreen shows a warning → click **More info** → **Run anyway**
+   (The exe is unsigned — this is expected and safe)
+
+### Data location
+
+Your database is stored at:
+```
+C:\Users\<YourName>\AppData\Roaming\kks-commission-mundy\CommissionMundy.db
+```
+
+### Backup & Restore
+
+- **Backup:** Copy `CommissionMundy.db` to a USB drive or cloud folder
+- **Restore:** Paste it back to the same path before launching the app
+
+---
+
+## For Developers
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) v18 or later (includes npm)
+- Git
+- Windows (the app targets Win32 only)
+- No Python or native build tools needed — sql.js is pure WebAssembly
+
+### Clone and install
+
+```bash
+git clone https://github.com/knatarajan1/BillingAppForCommisionMundy.git
+cd BillingAppForCommisionMundy
+npm install
+```
+
+### Run in development mode
+
+```bash
+npm run electron:dev
+```
+
+Starts Vite dev server on `http://localhost:5173` and launches Electron pointed at it. Hot-reload is active for renderer changes.
+
+### Build a production distributable
+
+```bash
+# 1. Package both 64-bit and 32-bit portable EXEs
+npm run package:win
+
+# 2. Stamp version info into the EXEs (shows in right-click → Properties → Details)
+npm run stamp
+
+# Output is at:
+#   KKS-Commission-Mundy-v2-Windows\
+#     HOW-TO-RUN.txt
+#     64-bit\KKS Commission Mundy.exe
+#     32-bit\KKS Commission Mundy.exe
+```
+
+Then zip and distribute:
+
+```powershell
+Compress-Archive -Path ".\KKS-Commission-Mundy-v2-Windows" -DestinationPath "..\KKS-Commission-Mundy-v2.3.1.zip" -Force
+```
+
+---
+
 ## Architecture
 
 ```
@@ -125,53 +207,6 @@ KKS Commission Mundy is a Windows desktop app (Electron + React) for managing ag
 │   └── 32-bit/resources/app.asar   ← 32-bit distributable
 └── dist/                    # Vite build output (generated)
 ```
-
----
-
-## Getting Started
-
-### Prerequisites
-
-- [Node.js](https://nodejs.org/) 18+
-- No Python or build tools required (sql.js is pure WebAssembly)
-
-### Install
-
-```bash
-npm install
-```
-
-### Development
-
-```bash
-npm run electron:dev
-```
-
----
-
-## Building for Distribution
-
-```bash
-# 1. Build the React frontend
-npm run build
-
-# 2. Create a clean pack folder (outside project dir to avoid sandbox issues)
-mkdir E:\KKS_pack_temp\node_modules
-xcopy /E /I dist     E:\KKS_pack_temp\dist
-xcopy /E /I electron E:\KKS_pack_temp\electron
-xcopy /E /I public   E:\KKS_pack_temp\public
-copy index.html      E:\KKS_pack_temp\
-copy package.json    E:\KKS_pack_temp\
-xcopy /E /I node_modules\sql.js E:\KKS_pack_temp\node_modules\sql.js
-xcopy /E /I node_modules\uuid   E:\KKS_pack_temp\node_modules\uuid
-
-# 3. Pack into asar
-npx asar pack E:\KKS_pack_temp "KKS-Commission-Mundy-v2-Windows\64-bit\resources\app.asar"
-copy "KKS-Commission-Mundy-v2-Windows\64-bit\resources\app.asar" ^
-     "KKS-Commission-Mundy-v2-Windows\32-bit\resources\app.asar"
-```
-
-The Electron binaries (`.exe`, DLLs, etc.) are already in the `64-bit/` and `32-bit/` folders — only `app.asar` changes with each build.
 
 ---
 
