@@ -31,7 +31,7 @@ const VERSION_STRINGS = {
   Comments:         `Build: ${BUILD_DATE}`,
 }
 
-const DIST_ROOT = path.join(__dirname, '../../KKS-Commission-Mundy-Windows')
+const DIST_ROOT = path.join(__dirname, '../KKS-Commission-Mundy-v2-Windows')
 
 const TARGETS = [
   { exe: path.join(DIST_ROOT, '64-bit', 'KKS Commission Mundy.exe'), label: '64-bit' },
