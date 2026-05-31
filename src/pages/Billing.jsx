@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { Plus, Trash2, Printer, ReceiptText } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Plus, Trash2, Printer, ReceiptText, ClipboardList, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import PageHeader from '../components/PageHeader'
 import EmptyState from '../components/EmptyState'
@@ -47,6 +47,10 @@ export default function Billing() {
   const [printBill,  setPrintBill]  = useState(null)
   const [saving,     setSaving]     = useState(false)
 
+  // Pending farmer receipts for the selected farmer+date
+  const [pendingReceipts,    setPendingReceipts]    = useState([])
+  const [receiptBannerShown, setReceiptBannerShown] = useState(false)
+
   async function loadAll() {
     try {
       const [c, v, vn, cfg] = await Promise.all([
@@ -58,6 +62,17 @@ export default function Billing() {
   }
 
   useEffect(() => { loadAll() }, [])
+
+  // When farmer or date changes, look for pending receipts
+  useEffect(() => {
+    if (!clientId || !api?.farmerReceipts) { setPendingReceipts([]); return }
+    api.farmerReceipts.getByClient(clientId, date)
+      .then(list => {
+        setPendingReceipts(list || [])
+        setReceiptBannerShown(false)
+      })
+      .catch(() => setPendingReceipts([]))
+  }, [clientId, date])
 
   const commissionRate    = parseFloat(config.commission_rate)    || 0
   const chitCostPerRecord = parseFloat(config.chit_cost_per_record) || 0
@@ -95,6 +110,25 @@ export default function Billing() {
   function addItem()       { setItems(prev => [...prev, emptyItem()]) }
   function removeItem(idx) { setItems(prev => prev.filter((_, i) => i !== idx)) }
 
+  function loadItemsFromReceipt(receipt) {
+    const loaded = receipt.items.map(ri => {
+      const veg = vegetables.find(v => v.vegetableId === ri.vegetableId)
+      return {
+        vegetableId:   ri.vegetableId,
+        vegetableName: ri.vegetableName,
+        vendorId:      '',
+        vendorName:    '',
+        units:         '',
+        unitType:      veg ? veg.unit : 'Kg',
+        rate:          '',
+        price:         '',
+      }
+    })
+    setItems(loaded.length > 0 ? loaded : [emptyItem()])
+    setReceiptBannerShown(true)
+    toast.success(`Loaded ${loaded.length} item(s) from receipt ${receipt.receiptNumber}`)
+  }
+
   async function handleAddClient(data) {
     const added = await api.clients.add(data)
     await loadAll()
@@ -128,6 +162,7 @@ export default function Billing() {
       setPrintBill(result)
       setItems([emptyItem()])
       setClientId(''); setClientName(''); setDate(today())
+      setPendingReceipts([]); setReceiptBannerShown(false)
       toast.success(t('billing.savedMsg').replace('{billNumber}', result.billNumber))
     } catch (err) {
       toast.error(err.message || t('master.operationFailed'))
@@ -166,6 +201,39 @@ export default function Billing() {
               </div>
             </div>
           </div>
+
+          {/* Pending farmer receipt banner */}
+          {pendingReceipts.length > 0 && !receiptBannerShown && (
+            <div className="rounded-xl border border-brand-200 bg-brand-50 p-4 flex items-start gap-3">
+              <ClipboardList size={18} className="text-brand-600 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-brand-800">
+                  {pendingReceipts.length === 1
+                    ? `Receipt ${pendingReceipts[0].receiptNumber} available`
+                    : `${pendingReceipts.length} receipts available for this farmer`}
+                </p>
+                <p className="text-xs text-brand-600 mt-0.5">
+                  Load produce items from receipt to prefill the billing form
+                </p>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {pendingReceipts.map(r => (
+                    <button key={r.receiptId}
+                      className="text-xs px-2.5 py-1 rounded-lg font-medium transition-colors"
+                      style={{ backgroundColor: 'var(--brand-100)', color: 'var(--brand-700)' }}
+                      onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--brand-200)'}
+                      onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--brand-100)'}
+                      onClick={() => loadItemsFromReceipt(r)}>
+                      {r.receiptNumber} · {r.items.length} items
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <button onClick={() => setReceiptBannerShown(true)}
+                className="p-1 rounded-lg hover:bg-brand-100 text-brand-400 shrink-0">
+                <X size={14} />
+              </button>
+            </div>
+          )}
 
           {/* Items */}
           <div className="card p-5">

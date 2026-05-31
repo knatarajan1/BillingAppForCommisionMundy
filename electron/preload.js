@@ -39,6 +39,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getVendorBills:  (vendorId, date)           => invoke('transactions:getVendorBills', vendorId, date),
     getVendorSummary: (fromDate, toDate)        => invoke('transactions:getVendorSummary', fromDate, toDate),
   },
+  cashDrawer: {
+    getByDate:   (date)         => invoke('cashDrawer:getByDate', date),
+    saveOpening: (date, amount) => invoke('cashDrawer:saveOpening', date, amount),
+    reset:       (date)         => invoke('cashDrawer:reset', date),
+    getHistory:  (from, to)     => invoke('cashDrawer:getHistory', from, to),
+  },
+  vendorPayments: {
+    getByDate: (date)     => invoke('vendorPayments:getByDate', date),
+    save:      (payments) => invoke('vendorPayments:save', payments),
+    report:    (vendorId) => invoke('vendorPayments:report', vendorId),
+    detail:    (vendorId) => invoke('vendorPayments:detail', vendorId),
+  },
+  farmerReceipts: {
+    save:        (data)             => invoke('farmerReceipts:save', data),
+    getByDate:   (date)             => invoke('farmerReceipts:getByDate', date),
+    getByClient: (clientId, date)   => invoke('farmerReceipts:getByClient', clientId, date),
+    getById:     (receiptId)        => invoke('farmerReceipts:getById', receiptId),
+  },
   db: {
     clearData: () => invoke('db:clearData'),
     getPath:   () => invoke('db:getPath'),

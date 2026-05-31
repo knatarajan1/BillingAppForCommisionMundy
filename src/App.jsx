@@ -7,6 +7,9 @@ import Clients from './pages/Clients'
 import Vendors from './pages/Vendors'
 import Reports from './pages/Reports'
 import Settings from './pages/Settings'
+import CashDrawer from './pages/CashDrawer'
+import VendorPayments from './pages/VendorPayments'
+import FarmerReceipt from './pages/FarmerReceipt'
 import { applyTheme } from './lib/themes'
 import { LanguageProvider } from './lib/LanguageContext'
 
@@ -39,13 +42,16 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Layout />}>
           <Route index element={<Navigate to="/billing" replace />} />
-          <Route path="billing"       element={<Billing />} />
-          <Route path="vegetables"    element={<Vegetables />} />
-          <Route path="clients"       element={<Clients />} />
-          <Route path="vendors"       element={<Vendors />} />
-          <Route path="reports"       element={<Reports />} />
-          <Route path="configuration" element={<Settings />} />
-          <Route path="settings"      element={<Navigate to="/configuration" replace />} />
+          <Route path="billing"          element={<Billing />} />
+          <Route path="farmer-receipt"  element={<FarmerReceipt />} />
+          <Route path="vegetables"       element={<Vegetables />} />
+          <Route path="clients"          element={<Clients />} />
+          <Route path="vendors"          element={<Vendors />} />
+          <Route path="cash-drawer"      element={<CashDrawer />} />
+          <Route path="vendor-payments"  element={<VendorPayments />} />
+          <Route path="reports"          element={<Reports />} />
+          <Route path="configuration"    element={<Settings />} />
+          <Route path="settings"         element={<Navigate to="/configuration" replace />} />
         </Route>
       </Routes>
     </LanguageProvider>

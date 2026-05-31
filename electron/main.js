@@ -105,6 +105,24 @@ handle('transactions:getClientBills',  (clientId, date)          => db.getClient
 handle('transactions:getVendorBills',  (vendorId, date)          => db.getVendorBills(vendorId, date))
 handle('transactions:getVendorSummary', (fromDate, toDate)       => db.getVendorSummary(fromDate, toDate))
 
+// ─── Cash Drawer ─────────────────────────────────────────────────
+handle('cashDrawer:getByDate',     (date)         => db.getCashDrawerByDate(date))
+handle('cashDrawer:saveOpening',   (date, amount) => db.saveCashDrawerOpening(date, amount))
+handle('cashDrawer:reset',         (date)         => db.resetCashDrawer(date))
+handle('cashDrawer:getHistory',    (from, to)     => db.getCashDrawerHistory(from, to))
+
+// ─── Vendor Payments ─────────────────────────────────────────────
+handle('vendorPayments:getByDate', (date)      => db.getVendorBillsByDate(date))
+handle('vendorPayments:save',      (payments)  => db.saveVendorPayments(payments))
+handle('vendorPayments:report',    (vendorId)  => db.getVendorPaymentReport(vendorId))
+handle('vendorPayments:detail',    (vendorId)  => db.getVendorPaymentDetail(vendorId))
+
+// ─── Farmer Receipts ─────────────────────────────────────────────
+handle('farmerReceipts:save',        (data)             => db.saveFarmerReceipt(data))
+handle('farmerReceipts:getByDate',   (date)             => db.getFarmerReceiptsByDate(date))
+handle('farmerReceipts:getByClient', (clientId, date)   => db.getFarmerReceiptsByClient(clientId, date))
+handle('farmerReceipts:getById',     (receiptId)        => db.getFarmerReceiptById(receiptId))
+
 // ─── Database management ─────────────────────────────────────────
 handle('db:clearData', () => db.clearAllData())
 handle('db:getPath',   () => db.getDbPath())

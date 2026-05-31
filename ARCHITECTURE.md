@@ -1,6 +1,6 @@
 # KKS Commission Mundy — Architecture
 
-**Version:** 2.1.8 | **Stack:** Electron 28 · React 18 · SQLite (sql.js WASM) · Tailwind CSS 3 · Vite 5
+**Version:** 2.3.1 | **Stack:** Electron 28 · React 18 · SQLite (sql.js WASM) · Tailwind CSS 3 · Vite 5
 
 ---
 
@@ -47,15 +47,42 @@ App.jsx
         │   ├── SmartSelect  (client / vegetable / vendor)
         │   │   └── TamilInput  (inline add forms)
         │   ├── Unit select  (translated via units.js)
+        │   ├── Receipt banner  (auto-loads items from FarmerReceipts when client selected)
         │   └── ClientBillPrint  (logo shown if print_logo_in_bill=1)
+        │
+        ├── FarmerReceipt.jsx       (NEW v2.3)
+        │   ├── Select farmer + date
+        │   ├── Add items: vegetable name only (weight/amount filled by auctioneer)
+        │   ├── Save → RCPT-YYYYMMDD-NNN receipt number (resets to 001 daily)
+        │   ├── FarmerReceiptPrint  (4-col: S.No | Vegetable | Weight-blank | Amount-blank)
+        │   └── Date receipt list (click any to reprint)
         │
         ├── Vegetables.jsx ──► MasterPage ──► TamilInput (name, unit)
         ├── Clients.jsx    ──► MasterPage ──► TamilInput (name, phone, address)
         ├── Vendors.jsx    ──► MasterPage ──► TamilInput (name, phone, address)
         │
+        ├── CashDrawer.jsx          (NEW v2.2, hardened v2.2.1)
+        │   ├── Date picker → load CashDrawer record
+        │   ├── Summary cards ONLY when hasRecord=true (no zero-data shown for unsaved dates)
+        │   ├── Opening amount input + Save (Enter key supported)
+        │   ├── Reset button (red, only shown when record exists) → sets opening to ₹0
+        │   └── Info banner for dates with no opening amount saved
+        │
+        ├── VendorPayments.jsx      (NEW v2.2, edge-cases v2.2.1)
+        │   ├── Date picker → load vendor bills from TransactionItems
+        │   ├── Unsaved-changes guard: confirmation before switching date
+        │   ├── isStale banner: when stored paid > current bill (bill was reduced)
+        │   ├── Per-row: inline validation, rounding on blur, "Pay in full" shortcut
+        │   ├── All-settled success banner
+        │   └── Save blocked when any row has a validation error
+        │
         ├── Reports.jsx
+        │   ├── Tabs: Farmer Bills | Vendor Bills | Vendor Summary
+        │   │         Cash Drawer (NEW) | Vendor Payments (NEW)
         │   ├── Translated unit labels in tables
         │   ├── ClientBillPrint / VendorBillPrint / VendorSummaryPrint
+        │   ├── CashDrawerReport: date range → daily opening/paid/closing
+        │   ├── VendorPaymentReport: vendor filter → cumulative pending
         │   └── (logo shown if print_logo_in_bill=1)
         │
         └── Settings.jsx
@@ -82,6 +109,18 @@ App.jsx
 | `transactions:getClientBills` | sqliteService | Bills filtered by client/date |
 | `transactions:getVendorBills`   | sqliteService | Vendor items grouped by vendor/date |
 | `transactions:getVendorSummary` | sqliteService | SUM(price) per vendor, HAVING > 0, optional date range |
+| `cashDrawer:getByDate` | `db.getCashDrawerByDate()` | Opening + computed closing for a date |
+| `cashDrawer:saveOpening` | `db.saveCashDrawerOpening()` | Insert/update opening amount for a date |
+| `cashDrawer:reset` | `db.resetCashDrawer()` | Set opening_amount=0 for a date |
+| `cashDrawer:getHistory` | `db.getCashDrawerHistory()` | All cash drawer records for a date range |
+| `vendorPayments:getByDate` | `db.getVendorBillsByDate()` | Vendor bills from TransactionItems + existing payments; returns `isStale` flag when stored paid > current bill |
+| `vendorPayments:save` | `db.saveVendorPayments()` | Bulk upsert; re-fetches live bill from TransactionItems; rejects if paid > live bill |
+| `vendorPayments:report` | `db.getVendorPaymentReport()` | Cumulative bill (from TransactionItems) / paid (from VendorPayments) / pending per vendor — includes vendors with no payment record yet |
+| `vendorPayments:detail` | `db.getVendorPaymentDetail()` | Per-date detail for a vendor — bill from TransactionItems, paid from VendorPayments LEFT JOIN |
+| `farmerReceipts:save` | `db.saveFarmerReceipt()` | Atomic save of receipt + items; auto-generates RCPT-YYYYMMDD-NNN number (resets daily) |
+| `farmerReceipts:getByDate` | `db.getFarmerReceiptsByDate()` | All receipts (with items) for a date |
+| `farmerReceipts:getByClient` | `db.getFarmerReceiptsByClient()` | Receipts for a client, optionally filtered by date |
+| `farmerReceipts:getById` | `db.getFarmerReceiptById()` | Single receipt with items |
 | `db:clearData` | `db.clearAllData()` | Backup DB then DELETE FROM all data tables |
 | `db:getPath` | `db.getDbPath()` | Return DB file path for diagnostics |
 | `app:pickLogo` | `dialog.showOpenDialog()` | File picker → returns base64 data URL |
@@ -134,7 +173,7 @@ Vowel map: a→அ  aa→ஆ  i→இ  ii/ee→ஈ  u→உ  uu/oo→ஊ  e→�
 ```sql
 Config (key PK, value, label, updated_at)
   Keys: company_name, company_address, company_phone,
-        commission_rate, chit_cost_per_record, bill_prefix,
+        commission_rate, chit_cost_per_record, bill_prefix (retired — no longer used for number generation),
         currency_symbol, theme_color, app_language,
         custom_logo_data, print_logo_in_bill
 
@@ -142,7 +181,20 @@ Vegetables     (vegetable_id PK, name, unit, created_at)
 Clients        (client_id PK, name, phone, address, created_at)
 Vendors        (vendor_id PK, name, phone, address, created_at)
 
-Transactions   (transaction_id PK, bill_number, client_id, client_name, date,
+-- NEW in v2.3 --
+
+FarmerReceipts (receipt_id PK, receipt_number UNIQUE, client_id, client_name,
+                date, created_at)
+  receipt_number format: RCPT-YYYYMMDD-NNN  e.g. RCPT-20260531-001 (resets to 001 each day)
+
+FarmerReceiptItems (item_id PK, receipt_id FK, receipt_number,
+                    vegetable_id, vegetable_name, created_at)
+  No weight/price columns — weight and amount are filled manually by the auctioneer on the printed slip
+  Migration v2.3.1: units and unit_type columns dropped from existing databases on startup
+
+Indexes: idx_freceipt_client, idx_freceipt_date, idx_frecitem_receipt
+
+Transactions   (transaction_id PK, bill_number TEXT — format YYYYMMDD-NNN e.g. 20260531-001 resets daily, client_id, client_name, date,
                 sub_total, commission_rate, commission_amount,
                 chit_cost_per_record, item_count, total_chit_cost, net_amount,
                 created_at)
@@ -151,7 +203,20 @@ TransactionItems (item_id PK, transaction_id FK, bill_number,
                   vegetable_id, vegetable_name, vendor_id, vendor_name,
                   units, unit_type, rate, price, date)
 
-Indexes: idx_txn_date, idx_txn_client, idx_item_txn, idx_item_vendor, idx_item_date
+-- NEW in v2.2 --
+
+CashDrawer     (drawer_id PK, date UNIQUE, opening_amount,
+                created_at, updated_at)
+  closing_amount is computed: opening_amount − SUM(Transactions.net_amount WHERE date=date)
+
+VendorPayments (payment_id PK, vendor_id, vendor_name, bill_date,
+                bill_amount, paid_amount,
+                created_at, updated_at,
+                UNIQUE(vendor_id, bill_date))
+  pending_amount is computed: bill_amount − paid_amount
+
+Indexes: idx_txn_date, idx_txn_client, idx_item_txn, idx_item_vendor, idx_item_date,
+         idx_cash_date, idx_vpay_vendor, idx_vpay_date
 ```
 
 ---
@@ -161,10 +226,10 @@ Indexes: idx_txn_date, idx_txn_client, idx_item_txn, idx_item_vendor, idx_item_d
 ```
 KKS-Commission-Mundy-v2-Windows/
 ├── 64-bit/
-│   ├── KKS Commission Mundy.exe   ← Electron 28 x64
-│   └── resources/app.asar         ← ~18.7 MB packed bundle
+│   ├── KKS Commission Mundy.exe   ← Electron 28 x64; PE resources stamped by scripts/stamp-exe.js
+│   └── resources/app.asar         ← packed bundle (dist/ + electron/ + sql.js + uuid)
 └── 32-bit/
-    ├── KKS Commission Mundy.exe   ← Electron 28 ia32
+    ├── KKS Commission Mundy.exe   ← Electron 28 ia32; PE resources stamped by scripts/stamp-exe.js
     └── resources/app.asar         ← identical JS (arch-independent)
 
 app.asar contents:
@@ -174,6 +239,12 @@ app.asar contents:
   node_modules/uuid   UUID generation
   public/icon.ico
   package.json · index.html
+
+Exe version stamping (scripts/stamp-exe.js):
+  Uses rcedit (devDependency) to write PE version resources into both exe files.
+  Fields set: ProductVersion, FileVersion, ProductName, FileDescription,
+              CompanyName, LegalCopyright, Comments (build date).
+  Run: npm run stamp   (after packing the asar)
 ```
 
 ---
@@ -201,7 +272,7 @@ Receipt layout (.rcp class):
   [LOGO 40px]  Company Name          ← flex-direction: row; logo top-left
                Address / Phone
   ─────────────────── (dashed border-top)
-  Bill: BILL-0001     Date: 2026-05-30
+  Bill: 20260530-001     Date: 2026-05-30
   Farmer: Name
   ─────────────────── (dashed border-top)
   Vegetable name   | 5 Kg   | ₹50.00   ← 3-col (no headers): 48% | 22% | 30%

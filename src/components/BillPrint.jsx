@@ -280,6 +280,84 @@ export function VendorSummaryPrint({ data, config, onClose }) {
   )
 }
 
+/* ─── Farmer Receipt (Produce Arrival Slip) ───────────────────── */
+export function FarmerReceiptPrint({ receipt, config, onClose }) {
+  const { t, logo } = useLanguage()
+  const company  = config.company_name    || 'KKS Commission Mundy'
+  const addr     = config.company_address || ''
+  const phone    = config.company_phone   || ''
+  const showLogo = config.print_logo_in_bill === '1' && !!logo
+
+  return (
+    <PrintModal onClose={onClose} title={t('print.farmerReceipt')}>
+      <div className="rcp">
+
+        {/* ── Header: logo + company name ── */}
+        <div className="rcp-header">
+          {showLogo && <img className="rcp-logo" src={logo} alt="" />}
+          <div className="rcp-co">
+            <div className="rcp-co-name">{company}</div>
+            {addr  && <div className="rcp-co-sub">{addr}</div>}
+            {phone && <div className="rcp-co-sub">{t('print.phone')}: {phone}</div>}
+          </div>
+        </div>
+
+        <hr className="rcp-div" />
+
+        {/* ── Receipt meta ── */}
+        <div className="rcp-meta" style={{fontWeight:700, fontSize:'13px'}}>
+          {t('print.farmerReceipt')}
+        </div>
+        <div className="rcp-kv">
+          <span className="k">{t('print.receiptNo')}:</span>
+          <span className="v" style={{fontWeight:700}}>{receipt.receiptNumber}</span>
+        </div>
+        <div className="rcp-kv">
+          <span className="k">{t('print.date')}:</span>
+          <span className="v">{receipt.date}</span>
+        </div>
+        <div className="rcp-meta">
+          <span style={{fontWeight:600}}>{t('print.client')}:</span> {receipt.clientName}
+        </div>
+
+        <hr className="rcp-div" />
+
+        {/* ── Items table: S.No | Vegetable | Weight (blank) | Amount (blank) ── */}
+        <table style={{tableLayout:'fixed', width:'100%'}}>
+          <thead>
+            <tr style={{fontSize:'9px', color:'#555'}}>
+              <th style={{width:'8%',  textAlign:'center', padding:'1px 2px'}}>{t('print.itemNo')}</th>
+              <th style={{width:'47%', textAlign:'left',   padding:'1px 2px'}}>{t('print.vegetable')}</th>
+              <th style={{width:'22%', textAlign:'center', padding:'1px 2px'}}>{t('print.weight')}</th>
+              <th style={{width:'23%', textAlign:'right',  padding:'1px 2px'}}>{t('print.price')}</th>
+            </tr>
+            <tr><td colSpan={4} style={{borderTop:'1px dashed #ccc', padding:0}}></td></tr>
+          </thead>
+          <tbody>
+            {(receipt.items || []).map((item, i) => (
+              <tr key={i} style={{fontSize:'11px'}}>
+                <td style={{padding:'4px 2px', textAlign:'center', verticalAlign:'top', fontWeight:600}}>{i + 1}</td>
+                <td style={{padding:'4px 2px', verticalAlign:'top', wordBreak:'break-word'}}>{item.vegetableName}</td>
+                <td style={{padding:'4px 2px', textAlign:'center', verticalAlign:'top', borderBottom:'1px solid #ddd'}}>&nbsp;</td>
+                <td style={{padding:'4px 2px', textAlign:'right',  verticalAlign:'top', borderBottom:'1px solid #ddd'}}>&nbsp;</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <hr className="rcp-div" />
+
+        {/* ── Footer ── */}
+        <div className="rcp-footer">
+          <p>{t('print.thankYou')}</p>
+          <p><strong>{t('print.visitAgain')}</strong></p>
+        </div>
+
+      </div>
+    </PrintModal>
+  )
+}
+
 /* ─── Shared print modal wrapper ──────────────────────────────── */
 function PrintModal({ title, children, onClose }) {
   const { t } = useLanguage()

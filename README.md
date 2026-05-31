@@ -1,10 +1,27 @@
 # KKS Commission Mundy
 
-Agricultural Commission Management Desktop Application — v2.1.6
+Agricultural Commission Management Desktop Application — v2.3.1
 
 ## Overview
 
 KKS Commission Mundy is a Windows desktop app (Electron + React) for managing agricultural commission transactions. It tracks farmers, vendors, vegetables, and generates bills with automatic commission and chit cost calculations.
+
+**v2.3.1 changes:**
+- **Daily bill numbering** — Bill numbers now follow `YYYYMMDD-NNN` format (e.g. `20260531-001`) and reset to `001` each calendar day. The old `bill_prefix` setting is retired.
+- **Daily receipt numbering** — Farmer Receipt numbers now follow `RCPT-YYYYMMDD-NNN` format and reset to `001` each day.
+- **Vendor Payment Report fix** — All vendors with bills now appear in the Vendor Payment Report immediately after billing, even before any payment is recorded.
+
+**v2.3 changes (new features):**
+- **Farmer Receipt / Produce Arrival Slip (விவசாயி ரசீது)** — dedicated page to register produce a farmer brings before billing. Enter vegetable + approx qty + unit; generates a numbered receipt (RCPT-0001…) printed with blank rate/price columns for the auctioneer to fill manually.
+- **Billing auto-load** — when a farmer is selected in Billing, any pending receipt for that farmer/date appears as a one-click banner to pre-fill the vegetable list (rate & price left blank for the operator to enter).
+- **Independent of cash drawer** — receipts have no monetary values; cash drawer is completely unaffected.
+- **Clear All Data** now also clears FarmerReceipts and FarmerReceiptItems.
+
+**v2.2 changes (new features):**
+- **Cash Drawer Management (பண இருப்பு மேலாண்மை)** — set opening cash amount per day, auto-deducts bills paid, shows live closing balance, reset button with warning, date navigation
+- **Vendor Bill Management (வியாபாரி தொகை மேலாண்மை)** — select a date, see all vendor bills, enter paid amount per vendor, track pending amounts cumulatively in database
+- **Cash Drawer Report** — new tab in Reports showing daily opening / bills paid / closing balance for any date range
+- **Vendor Payment Report** — new tab in Reports showing cumulative bill / paid / pending amounts per vendor
 
 **v2.1 changes from v2.0:**
 - **Tamil language support** — switch the entire UI to Tamil via Configuration tab
@@ -91,7 +108,9 @@ KKS Commission Mundy is a Windows desktop app (Electron + React) for managing ag
 │   │   ├── Vegetables.jsx     # Vegetable master list
 │   │   ├── Clients.jsx        # Client master list
 │   │   ├── Vendors.jsx        # Vendor master list
-│   │   ├── Reports.jsx        # Client & vendor bill reports
+│   │   ├── CashDrawer.jsx     # Daily cash opening / closing / reset (NEW v2.2)
+│   │   ├── VendorPayments.jsx # Vendor bill payment tracking (NEW v2.2)
+│   │   ├── Reports.jsx        # Client, vendor, cash drawer & vendor payment reports
 │   │   └── Settings.jsx       # Language, logo, theme, company details, danger zone
 │   └── lib/
 │       ├── LanguageContext.jsx # React context: lang, setLang, t(), logo, setLogo
@@ -216,6 +235,8 @@ When Tamil mode is active, **all text fields** accept English phonetics and conv
 | `Vendors` | Vendor master (id, name, phone, address) |
 | `Transactions` | Bill header (bill number, client, date, totals) |
 | `TransactionItems` | Bill line items (vegetable, vendor, qty, rate, price) |
+| `CashDrawer` | Daily opening cash amount; closing computed from Transactions (NEW v2.2) |
+| `VendorPayments` | Per-vendor per-date payment record: bill_amount, paid_amount, pending (NEW v2.2) |
 
 ### Backup & Restore
 
@@ -238,7 +259,9 @@ Before clearing, a timestamped backup is auto-saved to:
 | **Vegetables** | Manage vegetable master list with unit types |
 | **Farmers** | Manage farmer master list |
 | **Vendors** | Manage vendor master list |
-| **Reports** | Filter farmer bills or vendor bills by date; printable receipts; vendor payment summary receipt |
+| **Cash Drawer** | Set opening cash per day; live closing = opening − bills paid; red reset button; navigate any date |
+| **Vendor Payments** | Select date, see vendor bills (amount > 0), enter paid amount per vendor, auto-compute pending; saved cumulatively |
+| **Reports** | Farmer bills, vendor bills, vendor summary, cash drawer history, vendor payment summary |
 | **Configuration** | Language, logo, theme colour, company details, billing parameters, clear data |
 
 ---
@@ -257,6 +280,27 @@ where:
 ---
 
 ## Changelog
+
+### v2.2.1
+- Fixed: Cash Drawer — summary cards (opening/bills paid/closing) now only appear when an opening amount has actually been saved for that date; unsaved dates show an info prompt only
+- Fixed: Cash Drawer — Reset button hidden until a record exists; Save button disabled while input is empty
+- Fixed: Vendor Payments — date-change guard prompts to discard unsaved changes before switching
+- Fixed: Vendor Payments — `isStale` detection: when stored paid amount exceeds the current bill (bill reduced after payment), row shown in orange with warning; stale input pre-filled at safe maximum (bill amount)
+- Fixed: Vendor Payments — per-row inline validation errors (red border + message) instead of global toasts
+- Fixed: Vendor Payments — "Pay in full" shortcut button per vendor row
+- Fixed: Vendor Payments — `saveVendorPayments` re-fetches live bill from TransactionItems before saving; rejects paid > live bill with a precise error message
+- Fixed: Vendor Payments — input rounds to 2 decimal places on blur; save blocked when any row has a validation error
+- New: Vendor Payments — all-settled success banner when every vendor on a date is fully paid
+
+### v2.2.0
+- New: **Cash Drawer Management** page (`/cash-drawer`) — set opening cash for any date; closing balance = opening − Σ net_amount of bills that day; red Reset button with confirmation
+- New: **Vendor Bill Management** page (`/vendor-payments`) — select date, list vendors with bill totals (amount > 0 only), enter paid amount, auto-compute pending; results saved to `VendorPayments` table
+- New: **Cash Drawer Report** tab in Reports — date range filter → table of date | opening | bills paid | closing
+- New: **Vendor Payment Report** tab in Reports — vendor filter → cumulative bill / paid / pending per vendor
+- New DB table: `CashDrawer` (date UNIQUE, opening_amount)
+- New DB table: `VendorPayments` (vendor_id + bill_date UNIQUE, bill_amount, paid_amount)
+- Updated: Sidebar with two new nav items (Wallet + Banknote icons)
+- Updated: Translations — full English + Tamil for all new keys
 
 ### v2.1.8
 - New: **Vendor Payment Summary** — third tab in Reports showing each vendor's total payable amount (only vendors with amount > 0)

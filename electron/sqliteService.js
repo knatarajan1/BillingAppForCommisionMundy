@@ -120,6 +120,46 @@ const SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_item_txn      ON TransactionItems(transaction_id);
   CREATE INDEX IF NOT EXISTS idx_item_vendor   ON TransactionItems(vendor_id);
   CREATE INDEX IF NOT EXISTS idx_item_date     ON TransactionItems(date);
+  CREATE TABLE IF NOT EXISTS CashDrawer (
+    drawer_id      TEXT PRIMARY KEY,
+    date           TEXT NOT NULL UNIQUE,
+    opening_amount REAL NOT NULL DEFAULT 0,
+    created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS VendorPayments (
+    payment_id   TEXT PRIMARY KEY,
+    vendor_id    TEXT NOT NULL,
+    vendor_name  TEXT NOT NULL,
+    bill_date    TEXT NOT NULL,
+    bill_amount  REAL NOT NULL DEFAULT 0,
+    paid_amount  REAL NOT NULL DEFAULT 0,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(vendor_id, bill_date)
+  );
+  CREATE INDEX IF NOT EXISTS idx_cash_date   ON CashDrawer(date);
+  CREATE INDEX IF NOT EXISTS idx_vpay_vendor ON VendorPayments(vendor_id);
+  CREATE INDEX IF NOT EXISTS idx_vpay_date   ON VendorPayments(bill_date);
+  CREATE TABLE IF NOT EXISTS FarmerReceipts (
+    receipt_id     TEXT PRIMARY KEY,
+    receipt_number TEXT NOT NULL,
+    client_id      TEXT NOT NULL,
+    client_name    TEXT NOT NULL,
+    date           TEXT NOT NULL,
+    created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS FarmerReceiptItems (
+    item_id        TEXT PRIMARY KEY,
+    receipt_id     TEXT NOT NULL,
+    receipt_number TEXT NOT NULL,
+    vegetable_id   TEXT NOT NULL,
+    vegetable_name TEXT NOT NULL,
+    created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_freceipt_client  ON FarmerReceipts(client_id);
+  CREATE INDEX IF NOT EXISTS idx_freceipt_date    ON FarmerReceipts(date);
+  CREATE INDEX IF NOT EXISTS idx_frecitem_receipt ON FarmerReceiptItems(receipt_id);
 `
 
 // Called from main.js with the resolved paths so this module never needs
@@ -148,6 +188,13 @@ async function initDb({ userDataPath, exePath } = {}) {
   }
 
   db.exec(SCHEMA)
+
+  // Migration v2.3.1: drop units/unit_type from FarmerReceiptItems if they exist
+  try {
+    const cols = all("PRAGMA table_info(FarmerReceiptItems)")
+    if (cols.some(c => c.name === 'units'))     db.exec('ALTER TABLE FarmerReceiptItems DROP COLUMN units')
+    if (cols.some(c => c.name === 'unit_type')) db.exec('ALTER TABLE FarmerReceiptItems DROP COLUMN unit_type')
+  } catch (_) { /* table may not exist on very first run — ignore */ }
 
   // Seed default config rows (INSERT OR IGNORE)
   for (const c of DEFAULT_CONFIGS) {
@@ -186,6 +233,8 @@ function clearAllData() {
   // Delete all data except Config
   db.run('BEGIN')
   try {
+    db.exec('DELETE FROM FarmerReceiptItems')
+    db.exec('DELETE FROM FarmerReceipts')
     db.exec('DELETE FROM TransactionItems')
     db.exec('DELETE FROM Transactions')
     db.exec('DELETE FROM Clients')
@@ -310,17 +359,17 @@ function deleteVendor(vendorId) {
 
 // ─── Transactions ─────────────────────────────────────────────────
 
-function getNextBillNumber() {
-  const configs = getAllConfigs()
-  const prefix = configs['bill_prefix'] || 'BILL'
-  // Bug fix: use MAX via SQL rather than scanning all rows in JS
+function getNextBillNumber(date) {
+  // Format: YYYYMMDD-NNN  (resets to 001 each calendar day)
+  const datePart = (date || new Date().toISOString().slice(0, 10)).replace(/-/g, '')
+  const prefix   = datePart + '-'
   const row = get(
     `SELECT MAX(CAST(REPLACE(bill_number, ?, '') AS INTEGER)) AS maxNum
      FROM Transactions WHERE bill_number LIKE ?`,
-    [prefix + '-', prefix + '-%']
+    [prefix, prefix + '%']
   )
   const maxNum = row && row.maxNum ? parseInt(row.maxNum, 10) : 0
-  return `${prefix}-${String(maxNum + 1).padStart(4, '0')}`
+  return `${datePart}-${String(maxNum + 1).padStart(3, '0')}`
 }
 
 function saveTransaction(data) {
@@ -337,7 +386,7 @@ function saveTransaction(data) {
   const totalChitCost    = parseFloat((itemCount * chitCost).toFixed(2))
   const netAmount        = parseFloat((subTotal - commissionAmount - totalChitCost).toFixed(2))
 
-  const billNumber    = getNextBillNumber()
+  const billNumber    = getNextBillNumber(date)
   const transactionId = 'TXN-' + uuidv4().slice(0, 8).toUpperCase()
 
   // Bug fix: wrap in sql.js transaction for atomicity
@@ -488,6 +537,345 @@ function mapItem(r) {
   }
 }
 
+// ─── Cash Drawer ──────────────────────────────────────────────────
+
+function getCashDrawerByDate(date) {
+  if (!date) throw new Error('Date is required')
+  const drawer = get('SELECT * FROM CashDrawer WHERE date = ?', [date])
+  const txnRow = get(
+    "SELECT COALESCE(ROUND(SUM(net_amount), 2), 0) AS total FROM Transactions WHERE date = ?",
+    [date]
+  )
+  const openingAmount = drawer ? (parseFloat(drawer.opening_amount) || 0) : 0
+  const totalPaid     = txnRow ? (parseFloat(txnRow.total) || 0) : 0
+  return {
+    date,
+    openingAmount,
+    totalPaid,
+    closingAmount: parseFloat((openingAmount - totalPaid).toFixed(2)),
+    hasRecord: !!drawer,
+  }
+}
+
+function saveCashDrawerOpening(date, amount) {
+  if (!date) throw new Error('Date is required')
+  const amt = parseFloat(amount)
+  if (isNaN(amt) || amt < 0) throw new Error('Opening amount must be a non-negative number')
+  const existing = get('SELECT drawer_id FROM CashDrawer WHERE date = ?', [date])
+  if (existing) {
+    run(
+      "UPDATE CashDrawer SET opening_amount = ?, updated_at = datetime('now') WHERE date = ?",
+      [amt, date]
+    )
+  } else {
+    const id = 'CDR-' + uuidv4().slice(0, 8).toUpperCase()
+    run(
+      'INSERT INTO CashDrawer (drawer_id, date, opening_amount) VALUES (?, ?, ?)',
+      [id, date, amt]
+    )
+  }
+  return getCashDrawerByDate(date)
+}
+
+function resetCashDrawer(date) {
+  if (!date) throw new Error('Date is required')
+  const existing = get('SELECT drawer_id FROM CashDrawer WHERE date = ?', [date])
+  if (existing) {
+    run(
+      "UPDATE CashDrawer SET opening_amount = 0, updated_at = datetime('now') WHERE date = ?",
+      [date]
+    )
+  }
+  // If no record exists, nothing to reset — return zeroed state
+  return getCashDrawerByDate(date)
+}
+
+function getCashDrawerHistory(fromDate, toDate) {
+  let sql = `
+    SELECT cd.date, cd.opening_amount,
+           COALESCE(
+             (SELECT ROUND(SUM(t.net_amount), 2) FROM Transactions t WHERE t.date = cd.date),
+             0
+           ) AS total_paid
+    FROM CashDrawer cd WHERE 1=1`
+  const params = []
+  if (fromDate) { sql += ' AND cd.date >= ?'; params.push(fromDate) }
+  if (toDate)   { sql += ' AND cd.date <= ?'; params.push(toDate) }
+  sql += ' ORDER BY cd.date DESC'
+
+  return all(sql, params).map(r => {
+    const opening = parseFloat(r.opening_amount) || 0
+    const paid    = parseFloat(r.total_paid)     || 0
+    return {
+      date: r.date,
+      openingAmount: opening,
+      totalPaid:     paid,
+      closingAmount: parseFloat((opening - paid).toFixed(2)),
+    }
+  })
+}
+
+// ─── Vendor Payments ──────────────────────────────────────────────
+
+function getVendorBillsByDate(date) {
+  if (!date) throw new Error('Date is required')
+  const vendorBills = all(
+    `SELECT ti.vendor_id, ti.vendor_name,
+            ROUND(SUM(ti.price), 2) AS bill_amount
+     FROM TransactionItems ti
+     WHERE ti.date = ?
+     GROUP BY ti.vendor_id, ti.vendor_name
+     HAVING SUM(ti.price) > 0
+     ORDER BY ti.vendor_name ASC`,
+    [date]
+  )
+
+  return vendorBills.map(vb => {
+    const payment = get(
+      'SELECT * FROM VendorPayments WHERE vendor_id = ? AND bill_date = ?',
+      [vb.vendor_id, date]
+    )
+    const billAmt       = parseFloat(vb.bill_amount) || 0
+    const storedPaidAmt = payment ? (parseFloat(payment.paid_amount) || 0) : 0
+    // isStale: stored paid exceeds current bill (bill reduced after payment was recorded)
+    const isStale = storedPaidAmt > billAmt
+    return {
+      vendorId:         vb.vendor_id,
+      vendorName:       vb.vendor_name,
+      billAmount:       billAmt,
+      paidAmount:       storedPaidAmt,
+      pendingAmount:    parseFloat((billAmt - storedPaidAmt).toFixed(2)),
+      paymentId:        payment ? payment.payment_id : null,
+      isStale,
+    }
+  })
+}
+
+function saveVendorPayments(payments) {
+  if (!Array.isArray(payments) || payments.length === 0) throw new Error('No payments provided')
+  db.run('BEGIN')
+  try {
+    for (const p of payments) {
+      if (!p.vendorId || !p.billDate) throw new Error('vendorId and billDate are required')
+      const paidAmt = parseFloat(p.paidAmount) || 0
+      if (paidAmt < 0) throw new Error(
+        `Paid amount cannot be negative for vendor: ${p.vendorName || p.vendorId}`
+      )
+
+      // Always re-fetch the live bill from TransactionItems so bill_amount stays current
+      // and we catch changes made after the UI loaded.
+      const billRow = get(
+        `SELECT COALESCE(ROUND(SUM(price), 2), 0) AS total
+         FROM TransactionItems WHERE vendor_id = ? AND date = ?`,
+        [p.vendorId, p.billDate]
+      )
+      const liveBillAmt = billRow ? (parseFloat(billRow.total) || 0) : 0
+
+      if (liveBillAmt === 0 && paidAmt > 0) throw new Error(
+        `No bill found for vendor "${p.vendorName || p.vendorId}" on ${p.billDate}`
+      )
+      if (paidAmt > liveBillAmt) throw new Error(
+        `Paid amount (₹${paidAmt.toFixed(2)}) exceeds current bill ` +
+        `(₹${liveBillAmt.toFixed(2)}) for "${p.vendorName || p.vendorId}"`
+      )
+
+      const existing = get(
+        'SELECT payment_id FROM VendorPayments WHERE vendor_id = ? AND bill_date = ?',
+        [p.vendorId, p.billDate]
+      )
+      if (existing) {
+        db.run(
+          `UPDATE VendorPayments
+           SET vendor_name = ?, bill_amount = ?, paid_amount = ?, updated_at = datetime('now')
+           WHERE vendor_id = ? AND bill_date = ?`,
+          [p.vendorName || '', liveBillAmt, paidAmt, p.vendorId, p.billDate]
+        )
+      } else {
+        const id = 'VPY-' + uuidv4().slice(0, 8).toUpperCase()
+        db.run(
+          `INSERT INTO VendorPayments
+             (payment_id, vendor_id, vendor_name, bill_date, bill_amount, paid_amount)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [id, p.vendorId, p.vendorName || '', p.billDate, liveBillAmt, paidAmt]
+        )
+      }
+    }
+    db.run('COMMIT')
+  } catch (err) {
+    db.run('ROLLBACK')
+    throw err
+  }
+  persist()
+  return true
+}
+
+function getVendorPaymentReport(vendorId) {
+  // Bill amounts come from TransactionItems (always current, includes inline-added vendors).
+  // Paid amounts come from VendorPayments via LEFT JOIN (zero when no payment recorded yet).
+  let sql = `
+    SELECT ti.vendor_id, ti.vendor_name,
+           ROUND(SUM(ti.price), 2) AS total_bill,
+           COALESCE(vp_agg.total_paid, 0) AS total_paid
+    FROM TransactionItems ti
+    LEFT JOIN (
+      SELECT vendor_id, ROUND(SUM(paid_amount), 2) AS total_paid
+      FROM VendorPayments
+      GROUP BY vendor_id
+    ) vp_agg ON vp_agg.vendor_id = ti.vendor_id
+    WHERE 1=1`
+  const params = []
+  if (vendorId) { sql += ' AND ti.vendor_id = ?'; params.push(vendorId) }
+  sql += `
+    GROUP BY ti.vendor_id, ti.vendor_name
+    HAVING SUM(ti.price) > 0
+    ORDER BY ti.vendor_name ASC`
+
+  return all(sql, params).map(r => {
+    const totalBill = parseFloat(r.total_bill) || 0
+    const totalPaid = parseFloat(r.total_paid) || 0
+    return {
+      vendorId:     r.vendor_id,
+      vendorName:   r.vendor_name,
+      totalBill,
+      totalPaid,
+      totalPending: parseFloat((totalBill - totalPaid).toFixed(2)),
+    }
+  })
+}
+
+function getVendorPaymentDetail(vendorId) {
+  // Drive bill amounts from TransactionItems so dates with bills but no payment record appear.
+  let sql = `
+    SELECT ti.vendor_id, ti.vendor_name, ti.date AS bill_date,
+           ROUND(SUM(ti.price), 2) AS bill_amount,
+           COALESCE(vp.paid_amount, 0) AS paid_amount,
+           vp.payment_id, vp.created_at, vp.updated_at
+    FROM TransactionItems ti
+    LEFT JOIN VendorPayments vp
+      ON vp.vendor_id = ti.vendor_id AND vp.bill_date = ti.date
+    WHERE 1=1`
+  const params = []
+  if (vendorId) { sql += ' AND ti.vendor_id = ?'; params.push(vendorId) }
+  sql += `
+    GROUP BY ti.vendor_id, ti.vendor_name, ti.date
+    HAVING SUM(ti.price) > 0
+    ORDER BY ti.date DESC`
+
+  return all(sql, params).map(r => {
+    const billAmount = parseFloat(r.bill_amount) || 0
+    const paidAmount = parseFloat(r.paid_amount) || 0
+    return {
+      paymentId:     r.payment_id || null,
+      vendorId:      r.vendor_id,
+      vendorName:    r.vendor_name,
+      billDate:      r.bill_date,
+      billAmount,
+      paidAmount,
+      pendingAmount: parseFloat((billAmount - paidAmount).toFixed(2)),
+      createdAt:     r.created_at || null,
+      updatedAt:     r.updated_at || null,
+    }
+  })
+}
+
+// ─── Farmer Receipts ──────────────────────────────────────────────
+
+function getNextReceiptNumber(date) {
+  // Format: RCPT-YYYYMMDD-NNN  (resets to 001 each calendar day)
+  const datePart = (date || new Date().toISOString().slice(0, 10)).replace(/-/g, '')
+  const prefix   = 'RCPT-' + datePart + '-'
+  const row = get(
+    `SELECT MAX(CAST(REPLACE(receipt_number, ?, '') AS INTEGER)) AS maxNum
+     FROM FarmerReceipts WHERE receipt_number LIKE ?`,
+    [prefix, prefix + '%']
+  )
+  const maxNum = row && row.maxNum ? parseInt(row.maxNum, 10) : 0
+  return `${prefix}${String(maxNum + 1).padStart(3, '0')}`
+}
+
+function saveFarmerReceipt(data) {
+  const { clientId, clientName, items, date } = data
+  if (!clientId) throw new Error('Client is required')
+  if (!items || items.length === 0) throw new Error('At least one item is required')
+  if (!date) throw new Error('Date is required')
+
+  const receiptNumber = getNextReceiptNumber(date)
+  const receiptId     = 'RCP-' + uuidv4().slice(0, 8).toUpperCase()
+
+  db.run('BEGIN')
+  try {
+    db.run(
+      `INSERT INTO FarmerReceipts (receipt_id, receipt_number, client_id, client_name, date)
+       VALUES (?, ?, ?, ?, ?)`,
+      [receiptId, receiptNumber, clientId, clientName, date]
+    )
+    for (const item of items) {
+      db.run(
+        `INSERT INTO FarmerReceiptItems
+          (item_id, receipt_id, receipt_number, vegetable_id, vegetable_name)
+         VALUES (?, ?, ?, ?, ?)`,
+        [
+          'RCI-' + uuidv4().slice(0, 8).toUpperCase(),
+          receiptId, receiptNumber,
+          item.vegetableId, item.vegetableName,
+        ]
+      )
+    }
+    db.run('COMMIT')
+  } catch (err) {
+    db.run('ROLLBACK')
+    throw err
+  }
+  persist()
+
+  return {
+    receiptId, receiptNumber, clientId, clientName, date,
+    items: items.map((item, i) => ({ ...item, receiptId, receiptNumber })),
+  }
+}
+
+function getFarmerReceiptsByDate(date) {
+  const receipts = date
+    ? all('SELECT * FROM FarmerReceipts WHERE date = ? ORDER BY created_at DESC', [date])
+    : all('SELECT * FROM FarmerReceipts ORDER BY date DESC, created_at DESC')
+  return receipts.map(r => mapFarmerReceipt(r))
+}
+
+function getFarmerReceiptsByClient(clientId, date) {
+  let sql = 'SELECT * FROM FarmerReceipts WHERE 1=1'
+  const params = []
+  if (clientId) { sql += ' AND client_id = ?'; params.push(clientId) }
+  if (date)     { sql += ' AND date = ?';      params.push(date) }
+  sql += ' ORDER BY date DESC, created_at DESC'
+  return all(sql, params).map(r => mapFarmerReceipt(r))
+}
+
+function getFarmerReceiptById(receiptId) {
+  const r = get('SELECT * FROM FarmerReceipts WHERE receipt_id = ?', [receiptId])
+  return r ? mapFarmerReceipt(r) : null
+}
+
+function mapFarmerReceipt(r) {
+  return {
+    receiptId:     r.receipt_id,
+    receiptNumber: r.receipt_number,
+    clientId:      r.client_id,
+    clientName:    r.client_name,
+    date:          r.date,
+    createdAt:     r.created_at,
+    items: all(
+      'SELECT * FROM FarmerReceiptItems WHERE receipt_id = ? ORDER BY created_at ASC',
+      [r.receipt_id]
+    ).map(i => ({
+      itemId:        i.item_id,
+      receiptId:     i.receipt_id,
+      receiptNumber: i.receipt_number,
+      vegetableId:   i.vegetable_id,
+      vegetableName: i.vegetable_name,
+    })),
+  }
+}
+
 module.exports = {
   initDb, closeDb, getDbPath, clearAllData,
   getAllConfigs, updateConfig,
@@ -496,4 +884,7 @@ module.exports = {
   getAllVendors, addVendor, updateVendor, deleteVendor,
   saveTransaction, getAllTransactions, getTransactionsByDate,
   getTransactionById, getClientBills, getVendorBills, getVendorSummary,
+  getCashDrawerByDate, saveCashDrawerOpening, resetCashDrawer, getCashDrawerHistory,
+  getVendorBillsByDate, saveVendorPayments, getVendorPaymentReport, getVendorPaymentDetail,
+  saveFarmerReceipt, getFarmerReceiptsByDate, getFarmerReceiptsByClient, getFarmerReceiptById,
 }

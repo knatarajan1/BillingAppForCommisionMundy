@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Printer, ChevronDown, Users, Truck, FileText } from 'lucide-react'
+import { Printer, ChevronDown, Users, Truck, FileText, Wallet, Banknote } from 'lucide-react'
 import toast from 'react-hot-toast'
 import PageHeader from '../components/PageHeader'
 import EmptyState from '../components/EmptyState'
@@ -40,8 +40,12 @@ export default function Reports() {
         setResults(await api.transactions.getClientBills(clientId || null, date || null))
       } else if (tab === 'vendor') {
         setResults(await api.transactions.getVendorBills(vendorId || null, date || null))
-      } else {
+      } else if (tab === 'vendor-summary') {
         setResults(await api.transactions.getVendorSummary(fromDate || null, toDate || null))
+      } else if (tab === 'cash-drawer') {
+        setResults(await api.cashDrawer.getHistory(fromDate || null, toDate || null))
+      } else if (tab === 'vendor-payment') {
+        setResults(await api.vendorPayments.report(vendorId || null))
       }
     } catch (err) {
       toast.error(err.message || t('master.loadError'))
@@ -63,11 +67,13 @@ export default function Reports() {
       <PageHeader title={t('reports.title')} subtitle={t('reports.subtitle')} />
 
       {/* Tabs */}
-      <div className="flex gap-1 p-1 bg-slate-200 rounded-xl w-fit mb-5 no-print">
+      <div className="flex flex-wrap gap-1 p-1 bg-slate-200 rounded-xl w-fit mb-5 no-print">
         {[
-          { id: 'client',         labelKey: 'reports.clientBills',  icon: Users     },
-          { id: 'vendor',         labelKey: 'reports.vendorBills',  icon: Truck     },
-          { id: 'vendor-summary', labelKey: 'reports.vendorSummary', icon: FileText },
+          { id: 'client',         labelKey: 'reports.clientBills',        icon: Users    },
+          { id: 'vendor',         labelKey: 'reports.vendorBills',        icon: Truck    },
+          { id: 'vendor-summary', labelKey: 'reports.vendorSummary',      icon: FileText },
+          { id: 'cash-drawer',    labelKey: 'reports.cashDrawerReport',   icon: Wallet   },
+          { id: 'vendor-payment', labelKey: 'reports.vendorPaymentReport', icon: Banknote },
         ].map(tab_ => (
           <button key={tab_.id}
             onClick={() => { setTab(tab_.id); setResults([]) }}
@@ -106,12 +112,12 @@ export default function Reports() {
               </div>
             </div>
           )}
-          {tab !== 'vendor-summary' ? (
+          {tab === 'client' || tab === 'vendor' ? (
             <div>
               <label className="label">{t('common.date')}</label>
               <input type="date" className="input" value={date} onChange={e => setDate(e.target.value)} />
             </div>
-          ) : (
+          ) : tab === 'vendor-summary' || tab === 'cash-drawer' ? (
             <>
               <div>
                 <label className="label">{t('reports.fromDate')}</label>
@@ -122,7 +128,18 @@ export default function Reports() {
                 <input type="date" className="input" value={toDate} onChange={e => setToDate(e.target.value)} />
               </div>
             </>
-          )}
+          ) : tab === 'vendor-payment' ? (
+            <div className="w-52">
+              <label className="label">{t('billing.vendor')}</label>
+              <div className="relative">
+                <select className="input pr-8 appearance-none" value={vendorId} onChange={e => setVendorId(e.target.value)}>
+                  <option value="">{t('reports.allVendors')}</option>
+                  {vendors.map(v => <option key={v.vendorId} value={v.vendorId}>{v.name}</option>)}
+                </select>
+                <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              </div>
+            </div>
+          ) : null}
           <button className="btn-primary" onClick={handleSearch} disabled={loading}>
             {loading ? t('common.loading') : t('reports.generateReport')}
           </button>
@@ -141,9 +158,13 @@ export default function Reports() {
         <ClientBills bills={results} config={config} onPrint={setPrintBill} />
       ) : tab === 'vendor' ? (
         <VendorBills bills={results} config={config} onPrint={setPrintBill} />
-      ) : (
+      ) : tab === 'vendor-summary' ? (
         <VendorSummary rows={results} config={config} fromDate={fromDate} toDate={toDate} onPrint={setPrintSummary} />
-      )}
+      ) : tab === 'cash-drawer' ? (
+        <CashDrawerReport rows={results} config={config} />
+      ) : tab === 'vendor-payment' ? (
+        <VendorPaymentReport rows={results} config={config} />
+      ) : null}
 
       {printBill && tab === 'client' && (
         <ClientBillPrint bill={printBill} config={config} onClose={() => setPrintBill(null)} />
@@ -322,6 +343,104 @@ function VendorSummary({ rows, config, fromDate, toDate, onPrint }) {
           <tr className="bg-slate-50">
             <td className="table-cell font-bold text-slate-700">{t('print.totalPayable')}</td>
             <td className="table-cell text-right font-bold text-lg text-brand-700">{fmtC(grandTotal)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  )
+}
+
+function CashDrawerReport({ rows, config }) {
+  const { t } = useLanguage()
+  const currency = config.currency_symbol || '₹'
+  const fmtC = n => `${currency}${parseFloat(n || 0).toFixed(2)}`
+  const totOpening = rows.reduce((s, r) => s + (r.openingAmount || 0), 0)
+  const totPaid    = rows.reduce((s, r) => s + (r.totalPaid    || 0), 0)
+  const totClosing = rows.reduce((s, r) => s + (r.closingAmount || 0), 0)
+
+  return (
+    <div className="card overflow-hidden">
+      <div className="px-5 py-3 bg-slate-50 border-b border-slate-100">
+        <span className="font-bold text-slate-700 text-sm">{t('reports.cashDrawerReport')}</span>
+      </div>
+      <table className="w-full text-sm">
+        <thead>
+          <tr>
+            <th className="table-header text-left">{t('common.date')}</th>
+            <th className="table-header text-right">{t('cashDrawer.openingAmount')} ({currency})</th>
+            <th className="table-header text-right">{t('cashDrawer.totalBillsPaid')} ({currency})</th>
+            <th className="table-header text-right">{t('cashDrawer.closingAmount')} ({currency})</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => (
+            <tr key={i} className="hover:bg-slate-50/60">
+              <td className="table-cell font-medium">{row.date}</td>
+              <td className="table-cell text-right text-blue-700 font-semibold">{fmtC(row.openingAmount)}</td>
+              <td className="table-cell text-right text-amber-600 font-semibold">{fmtC(row.totalPaid)}</td>
+              <td className={`table-cell text-right font-bold ${row.closingAmount < 0 ? 'text-red-600' : 'text-green-700'}`}>
+                {fmtC(row.closingAmount)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="bg-slate-50">
+            <td className="table-cell font-bold text-slate-700">{t('reports.grandTotal')}</td>
+            <td className="table-cell text-right font-bold text-blue-700">{fmtC(totOpening)}</td>
+            <td className="table-cell text-right font-bold text-amber-600">{fmtC(totPaid)}</td>
+            <td className={`table-cell text-right font-bold text-lg ${totClosing < 0 ? 'text-red-600' : 'text-green-700'}`}>
+              {fmtC(totClosing)}
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  )
+}
+
+function VendorPaymentReport({ rows, config }) {
+  const { t } = useLanguage()
+  const currency = config.currency_symbol || '₹'
+  const fmtC = n => `${currency}${parseFloat(n || 0).toFixed(2)}`
+  const totBill    = rows.reduce((s, r) => s + (r.totalBill    || 0), 0)
+  const totPaid    = rows.reduce((s, r) => s + (r.totalPaid    || 0), 0)
+  const totPending = rows.reduce((s, r) => s + (r.totalPending || 0), 0)
+
+  return (
+    <div className="card overflow-hidden">
+      <div className="px-5 py-3 bg-slate-50 border-b border-slate-100">
+        <span className="font-bold text-slate-700 text-sm">{t('reports.vendorPaymentReport')}</span>
+      </div>
+      <table className="w-full text-sm">
+        <thead>
+          <tr>
+            <th className="table-header text-left">{t('billing.vendor')}</th>
+            <th className="table-header text-right">{t('vendorPayments.totalBill')} ({currency})</th>
+            <th className="table-header text-right">{t('vendorPayments.totalPaid')} ({currency})</th>
+            <th className="table-header text-right">{t('vendorPayments.totalPending')} ({currency})</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => (
+            <tr key={i} className="hover:bg-slate-50/60">
+              <td className="table-cell font-medium">{row.vendorName}</td>
+              <td className="table-cell text-right text-slate-700 font-semibold">{fmtC(row.totalBill)}</td>
+              <td className="table-cell text-right text-green-600 font-semibold">{fmtC(row.totalPaid)}</td>
+              <td className={`table-cell text-right font-bold ${row.totalPending <= 0 ? 'text-green-600' : 'text-amber-600'}`}>
+                {fmtC(Math.max(0, row.totalPending))}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="bg-slate-50">
+            <td className="table-cell font-bold text-slate-700">{t('reports.grandTotal')}</td>
+            <td className="table-cell text-right font-bold text-slate-700">{fmtC(totBill)}</td>
+            <td className="table-cell text-right font-bold text-green-600">{fmtC(totPaid)}</td>
+            <td className={`table-cell text-right font-bold text-lg ${totPending <= 0 ? 'text-green-600' : 'text-amber-600'}`}>
+              {fmtC(Math.max(0, totPending))}
+            </td>
           </tr>
         </tfoot>
       </table>
