@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Plus, Trash2, Printer, ReceiptText, ClipboardList, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import PageHeader from '../components/PageHeader'
@@ -12,26 +12,26 @@ const api = window.electronAPI
 const today = () => new Date().toISOString().slice(0, 10)
 
 function emptyItem() {
-  return { vegetableId: '', vegetableName: '', vendorId: '', vendorName: '', units: '', unitType: 'Kg', rate: '', price: '' }
+  return { vegetableId: '', vegetableName: '', vegetableShortName: '', vendorId: '', vendorName: '', units: '', unitType: 'Kg', rate: '', price: '' }
 }
 
 export default function Billing() {
   const { t } = useLanguage()
 
-  const UNIT_OPTIONS = getUnitOptions(t)
-
-  const CLIENT_FIELDS = [
+  const UNIT_OPTIONS   = useMemo(() => getUnitOptions(t), [t])
+  const CLIENT_FIELDS  = useMemo(() => [
     { key: 'name',  label: t('common.name'),  span2: true, placeholder: t('common.placeholder.fullName') },
     { key: 'phone', label: t('common.phone'), type: 'tel', placeholder: t('common.placeholder.phone') },
-  ]
-  const VENDOR_FIELDS = [
+  ], [t])
+  const VENDOR_FIELDS  = useMemo(() => [
     { key: 'name',  label: t('common.name'),  span2: true, placeholder: t('common.placeholder.fullName') },
     { key: 'phone', label: t('common.phone'), type: 'tel', placeholder: t('common.placeholder.phone') },
-  ]
-  const VEG_FIELDS = [
-    { key: 'name', label: t('common.name'), placeholder: t('vegetables.placeholder') },
-    { key: 'unit', label: t('vegetables.unit'), type: 'select', defaultValue: 'Kg', options: UNIT_OPTIONS },
-  ]
+  ], [t])
+  const VEG_FIELDS     = useMemo(() => [
+    { key: 'name',      label: t('common.name'),                  placeholder: t('vegetables.placeholder') },
+    { key: 'shortName', label: t('vegetables.shortName'),         placeholder: t('vegetables.shortNamePlaceholder') },
+    { key: 'unit',      label: t('vegetables.unit'), type: 'select', defaultValue: 'Kg', options: UNIT_OPTIONS },
+  ], [t, UNIT_OPTIONS])
 
   const [clients,    setClients]    = useState([])
   const [vegetables, setVegetables] = useState([])
@@ -74,21 +74,28 @@ export default function Billing() {
       .catch(() => setPendingReceipts([]))
   }, [clientId, date])
 
-  const commissionRate    = parseFloat(config.commission_rate)    || 0
+  const commissionRate    = parseFloat(config.commission_rate)      || 0
   const chitCostPerRecord = parseFloat(config.chit_cost_per_record) || 0
   const currencySymbol    = config.currency_symbol || '₹'
 
-  const computedItems = items.map(it => ({
-    ...it,
-    price: it.units && it.rate
-      ? parseFloat((parseFloat(it.units) * parseFloat(it.rate)).toFixed(2))
-      : 0,
-  }))
-
-  const subTotal         = computedItems.reduce((s, i) => s + (i.price || 0), 0)
-  const commissionAmount = parseFloat((subTotal * commissionRate / 100).toFixed(2))
-  const totalChitCost    = parseFloat((items.length * chitCostPerRecord).toFixed(2))
-  const netAmount        = parseFloat((subTotal - commissionAmount - totalChitCost).toFixed(2))
+  const { computedItems, subTotal, commissionAmount, totalChitCost, netAmount } = useMemo(() => {
+    const computedItems = items.map(it => ({
+      ...it,
+      price: it.units && it.rate
+        ? parseFloat((parseFloat(it.units) * parseFloat(it.rate)).toFixed(2))
+        : 0,
+    }))
+    const subTotal         = computedItems.reduce((s, i) => s + (i.price || 0), 0)
+    const commissionAmount = parseFloat((subTotal * commissionRate / 100).toFixed(2))
+    // Chit: weight-based (Kg/Ton) = 1 chit; count-based = qty chits
+    const totalChitUnits   = items.reduce((s, item) => {
+      const isWeight = item.unitType === 'Kg' || item.unitType === 'Ton'
+      return s + (isWeight ? 1 : (parseFloat(item.units) || 1))
+    }, 0)
+    const totalChitCost    = parseFloat((totalChitUnits * chitCostPerRecord).toFixed(2))
+    const netAmount        = parseFloat((subTotal - commissionAmount - totalChitCost).toFixed(2))
+    return { computedItems, subTotal, commissionAmount, totalChitCost, netAmount }
+  }, [items, commissionRate, chitCostPerRecord])
 
   function updateItem(idx, field, val) {
     setItems(prev => {
@@ -114,14 +121,15 @@ export default function Billing() {
     const loaded = receipt.items.map(ri => {
       const veg = vegetables.find(v => v.vegetableId === ri.vegetableId)
       return {
-        vegetableId:   ri.vegetableId,
-        vegetableName: ri.vegetableName,
-        vendorId:      '',
-        vendorName:    '',
-        units:         '',
-        unitType:      veg ? veg.unit : 'Kg',
-        rate:          '',
-        price:         '',
+        vegetableId:        ri.vegetableId,
+        vegetableName:      ri.vegetableName,
+        vegetableShortName: veg ? (veg.shortName || '') : '',
+        vendorId:           '',
+        vendorName:         '',
+        units:              '',
+        unitType:           veg ? veg.unit : 'Kg',
+        rate:               '',
+        price:              '',
       }
     })
     setItems(loaded.length > 0 ? loaded : [emptyItem()])
@@ -138,7 +146,7 @@ export default function Billing() {
   async function handleAddVegetable(data) {
     const added = await api.vegetables.add(data)
     await loadAll()
-    return { vegetableId: added.vegetableId, name: added.name, unit: added.unit }
+    return { vegetableId: added.vegetableId, name: added.name, unit: added.unit, shortName: added.shortName || '' }
   }
 
   async function handleAddVendor(data) {
@@ -255,11 +263,10 @@ export default function Billing() {
                         <label className="label">{t('billing.vegetable')}</label>
                         <SmartSelect
                           value={item.vegetableId}
-                          onChange={(id, name) => {
-                            const veg = vegetables.find(v => v.vegetableId === id)
+                          onChange={(id, name, obj) => {
                             setItems(prev => {
                               const next = [...prev]
-                              next[idx] = { ...next[idx], vegetableId: id, vegetableName: name, unitType: veg ? veg.unit : 'Kg' }
+                              next[idx] = { ...next[idx], vegetableId: id, vegetableName: name, vegetableShortName: obj?.shortName || '', unitType: obj?.unit || 'Kg' }
                               return next
                             })
                           }}
@@ -344,7 +351,7 @@ export default function Billing() {
                 <span className="font-medium text-amber-600">− {currencySymbol}{commissionAmount.toFixed(2)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500">{t('billing.chit')} ({items.length} × {currencySymbol}{chitCostPerRecord})</span>
+                <span className="text-slate-500">{t('billing.chit')} ({parseFloat(totalChitUnits.toFixed(2))} × {currencySymbol}{chitCostPerRecord})</span>
                 <span className="font-medium text-amber-600">− {currencySymbol}{totalChitCost.toFixed(2)}</span>
               </div>
               <div className="border-t border-slate-100 pt-3 flex justify-between">

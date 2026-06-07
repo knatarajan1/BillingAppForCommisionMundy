@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Plus, Pencil, Trash2, Search, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Modal from './Modal'
@@ -21,12 +21,16 @@ export default function MasterPage({
   const [busy, setBusy]           = useState(false)
   const [deleteId, setDeleteId]   = useState(null)
 
-  const filtered = items.filter(item =>
-    columns.some(col => {
-      const val = col.render ? '' : String(item[col.key] ?? '')
-      return val.toLowerCase().includes(search.toLowerCase())
-    }) || fields.some(f => String(item[f.key] ?? '').toLowerCase().includes(search.toLowerCase()))
-  )
+  const searchLower = search.toLowerCase()
+  const filtered = useMemo(() => {
+    if (!search) return items
+    return items.filter(item =>
+      columns.some(col => {
+        const val = col.render ? '' : String(item[col.key] ?? '')
+        return val.toLowerCase().includes(searchLower)
+      }) || fields.some(f => String(item[f.key] ?? '').toLowerCase().includes(searchLower))
+    )
+  }, [items, searchLower, columns, fields])
 
   function openAdd() {
     const init = {}

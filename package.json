@@ -1,6 +1,6 @@
 {
   "name": "kks-commission-mundy",
-  "version": "2.3.1",
+  "version": "2.5.5",
   "description": "KKS Commission Mundy - Agricultural Commission Management System",
   "main": "electron/main.js",
   "scripts": {

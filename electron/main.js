@@ -98,6 +98,8 @@ handle('vendors:delete',  (id) => db.deleteVendor(id))
 
 // ─── Transactions ────────────────────────────────────────────────
 handle('transactions:save',           (data)            => db.saveTransaction(data))
+handle('transactions:update',         (data)            => db.updateTransaction(data))
+handle('transactions:reverse',        (id)              => db.reverseTransaction(id))
 handle('transactions:getAll',         ()                => db.getAllTransactions())
 handle('transactions:getByDate',      (date)            => db.getTransactionsByDate(date))
 handle('transactions:getById',        (id)              => db.getTransactionById(id))
@@ -156,9 +158,30 @@ ipcMain.handle('app:pickLogo', async () => {
 })
 
 // ─── Print ───────────────────────────────────────────────────────
-ipcMain.handle('print:bill', () => {
+// Auto-selects the TVS printer (silent) when found; falls back to the
+// system print dialog if no printer whose name contains 'TVS' is installed.
+ipcMain.handle('print:bill', async () => {
+  let printers = []
+  try {
+    printers = await mainWindow.webContents.getPrintersAsync()
+  } catch { /* getPrintersAsync unavailable on some Electron builds — fall through */ }
+
+  const tvs = printers.find(p => p.name.toLowerCase().includes('tvs'))
+
+  const options = {
+    silent:          !!tvs,
+    printBackground: true,
+    // Explicitly set 80mm page width so Chromium lays out at 80mm regardless
+    // of the window's screen width. Without this, silent-mode print renders at
+    // the window width (~1366px) and all right-side flex/table content falls
+    // outside the 80mm paper and is clipped by the printer.
+    pageSize:        { width: 80000, height: 600000 }, // 80mm × 600mm (microns)
+    margins:         { marginType: 'none' },
+    ...(tvs ? { deviceName: tvs.name } : {}),
+  }
+
   return new Promise((resolve) => {
-    mainWindow.webContents.print({ silent: false, printBackground: true }, (success, errorType) => {
+    mainWindow.webContents.print(options, (success, errorType) => {
       if (!success && errorType !== 'cancelled') console.error('Print error:', errorType)
       resolve({ ok: success, error: errorType })
     })

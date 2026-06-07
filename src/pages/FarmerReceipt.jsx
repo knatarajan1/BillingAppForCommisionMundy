@@ -12,7 +12,7 @@ const api = window.electronAPI
 const today = () => new Date().toISOString().slice(0, 10)
 
 function emptyItem() {
-  return { vegetableId: '', vegetableName: '' }
+  return { vegetableId: '', vegetableName: '', vegetableShortName: '' }
 }
 
 export default function FarmerReceipt() {
@@ -26,6 +26,7 @@ export default function FarmerReceipt() {
   ]
   const VEG_FIELDS = [
     { key: 'name', label: t('common.name'), placeholder: t('vegetables.placeholder') },
+    { key: 'shortName', label: t('vegetables.shortName'), placeholder: t('vegetables.shortNamePlaceholder') },
     { key: 'unit', label: t('vegetables.unit'), type: 'select', defaultValue: 'Kg', options: UNIT_OPTIONS },
   ]
 
@@ -66,11 +67,10 @@ export default function FarmerReceipt() {
   function addItem()       { setItems(prev => [...prev, emptyItem()]) }
   function removeItem(idx) { setItems(prev => prev.filter((_, i) => i !== idx)) }
 
-  function setVegetable(idx, id) {
-    const veg = vegetables.find(v => v.vegetableId === id)
+  function setVegetable(idx, id, name, obj) {
     setItems(prev => {
       const next = [...prev]
-      next[idx] = { vegetableId: id, vegetableName: veg ? veg.name : '' }
+      next[idx] = { vegetableId: id, vegetableName: name || '', vegetableShortName: obj?.shortName || '' }
       return next
     })
   }
@@ -84,7 +84,7 @@ export default function FarmerReceipt() {
   async function handleAddVegetable(data) {
     const added = await api.vegetables.add(data)
     await loadAll()
-    return { vegetableId: added.vegetableId, name: added.name, unit: added.unit }
+    return { vegetableId: added.vegetableId, name: added.name, unit: added.unit, shortName: added.shortName || '' }
   }
 
   async function handleSave() {
@@ -95,7 +95,7 @@ export default function FarmerReceipt() {
     try {
       const result = await api.farmerReceipts.save({
         clientId, clientName, date,
-        items: items.map(i => ({ vegetableId: i.vegetableId, vegetableName: i.vegetableName })),
+        items: items.map(i => ({ vegetableId: i.vegetableId, vegetableName: i.vegetableName, vegetableShortName: i.vegetableShortName || '' })),
       })
       setSavedReceipt(result)
       setPrintReceipt(result)
@@ -163,7 +163,7 @@ export default function FarmerReceipt() {
                     <div className="flex-1">
                       <SmartSelect
                         value={item.vegetableId}
-                        onChange={(id) => setVegetable(idx, id)}
+                        onChange={(id, name, obj) => setVegetable(idx, id, name, obj)}
                         options={vegetables}
                         idKey="vegetableId" nameKey="name"
                         placeholder={t('farmerReceipt.selectVegetable')}

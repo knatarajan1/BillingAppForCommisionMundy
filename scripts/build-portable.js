@@ -31,11 +31,24 @@ run('npm run build')
 
 // ─── 2. Clean output dir ──────────────────────────────────────────
 console.log('\n=== Cleaning previous output... ===')
-if (fs.existsSync(DIST_DIR)) fs.rmSync(DIST_DIR, { recursive: true, force: true })
+// Kill any running instance so its files are not locked during replacement
+try { execSync('taskkill /f /im "KKS Commission Mundy.exe" /t', { stdio: 'ignore', shell: 'cmd.exe' }) } catch { }
+try { execSync('ping -n 3 127.0.0.1 > nul', { shell: 'cmd.exe', stdio: 'ignore' }) } catch { }
+
+function forceRemoveDir(dirPath) {
+  if (!fs.existsSync(dirPath)) return
+  try {
+    fs.rmSync(dirPath, { recursive: true, force: true })
+  } catch {
+    // Windows Defender/Search may hold a lock; fall back to rd /s /q
+    try { execSync(`rd /s /q "${dirPath}"`, { stdio: 'inherit', shell: 'cmd.exe' }) } catch { /* ignore */ }
+  }
+}
+forceRemoveDir(DIST_DIR)
 fs.mkdirSync(DIST_DIR, { recursive: true })
 
 const RELEASE_TEMP = path.join(ROOT, 'release')
-if (fs.existsSync(RELEASE_TEMP)) fs.rmSync(RELEASE_TEMP, { recursive: true, force: true })
+forceRemoveDir(RELEASE_TEMP)
 fs.mkdirSync(RELEASE_TEMP, { recursive: true })
 
 // ─── 3. Package for each arch ────────────────────────────────────

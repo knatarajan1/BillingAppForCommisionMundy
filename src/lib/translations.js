@@ -49,6 +49,8 @@ export const translations = {
     'vegetables.title': 'Vegetables',
     'vegetables.subtitle': 'Manage vegetable master list',
     'vegetables.name': 'Vegetable Name',
+    'vegetables.shortName': 'Short Name',
+    'vegetables.shortNamePlaceholder': 'e.g. TMT (optional)',
     'vegetables.unit': 'Unit',
     'vegetables.emptyTitle': 'No vegetables yet',
     'vegetables.emptyDesc': 'Add your first vegetable to get started',
@@ -222,6 +224,14 @@ export const translations = {
     'settings.printLogoLabel': 'Print logo on bill receipts',
     'settings.printLogoDesc': 'Show the company logo at the top of printed bill receipts',
 
+    // Print Options
+    'settings.printOptions': 'Print Options',
+    'settings.printAddressLabel': 'Print company address',
+    'settings.printAddressDesc': 'Show company address on printed bills and receipts',
+    'settings.printPhoneLabel': 'Print company phone',
+    'settings.printPhoneDesc': 'Show company phone number on printed bills',
+    'settings.printFooterLabel': 'Print footer message',
+    'settings.printFooterDesc': 'Show "Thank you / Visit Again" at the bottom of printed bills',
     // Clear Data
     'settings.dangerZone': 'Danger Zone',
     'settings.clearDataTitle': 'Clear All Data',
@@ -305,6 +315,18 @@ export const translations = {
     'print.thankYou': 'Thank you for your business!',
     'print.visitAgain': 'Visit Again!',
     'print.phone': 'Phone',
+    'print.printing': 'Printing…',
+    'print.vendor': 'Vendor',
+
+    // Edit / Reverse bill
+    'billing.editBill': 'Edit Bill',
+    'billing.reverseBill': 'Reverse',
+    'billing.updateBill': 'Update Bill',
+    'billing.reversed': 'REVERSED',
+    'billing.confirmReverse': 'Mark bill {billNumber} as reversed? It will be excluded from all reports and totals.',
+    'billing.confirmReverseBtn': 'Yes, Reverse',
+    'billing.billUpdated': 'Bill {billNumber} updated',
+    'billing.reversedSuccess': 'Bill {billNumber} reversed',
   },
 
   ta: {
@@ -357,6 +379,8 @@ export const translations = {
     'vegetables.title': 'காய்கறிகள்',
     'vegetables.subtitle': 'காய்கறி பட்டியலை நிர்வகி',
     'vegetables.name': 'காய்கறி பெயர்',
+    'vegetables.shortName': 'சுருக்கப் பெயர்',
+    'vegetables.shortNamePlaceholder': 'எ.கா. தக்கா (விரும்பினால்)',
     'vegetables.unit': 'அலகு',
     'vegetables.emptyTitle': 'காய்கறிகள் இல்லை',
     'vegetables.emptyDesc': 'தொடங்க முதல் காய்கறியை சேர்க்கவும்',
@@ -530,6 +554,16 @@ export const translations = {
     'settings.printLogoLabel': 'பில் ரசீதில் சின்னம் அச்சிடு',
     'settings.printLogoDesc': 'அச்சிடப்படும் பில் ரசீதின் மேல் நிறுவன சின்னத்தை காட்டு',
 
+    // Print Options
+    'settings.printOptions': 'அச்சு விருப்பங்கள்',
+    'settings.printAddressLabel': 'நிறுவன முகவரி அச்சிடு',
+    'settings.printAddressDesc': 'அச்சிடப்பட்ட பில்களில் நிறுவன முகவரி காட்டு',
+    'settings.printPhoneLabel': 'நிறுவன தொலைபேசி அச்சிடு',
+    'settings.printPhoneDesc': 'அச்சிடப்பட்ட பில்களில் தொலைபேசி எண் காட்டு',
+    'settings.printFooterLabel': 'பாதவலை செய்தி அச்சிடு',
+    'settings.printFooterDesc': 'அச்சிடப்பட்ட பில்களில் "நன்றி / மீண்டும் வாருங்கள்" காட்டு',
+
+
     // Clear Data
     'settings.dangerZone': 'ஆபத்தான பகுதி',
     'settings.clearDataTitle': 'அனைத்து தரவையும் அழி',
@@ -613,5 +647,17 @@ export const translations = {
     'print.thankYou': 'உங்கள் வணிகத்திற்கு நன்றி!',
     'print.visitAgain': 'மீண்டும் வாருங்கள்!',
     'print.phone': 'தொலைபேசி',
+    'print.printing': 'அச்சிடுகிறது…',
+    'print.vendor': 'வியாபாரி',
+
+    // Edit / Reverse bill
+    'billing.editBill': 'பில் திருத்து',
+    'billing.reverseBill': 'திரும்பப் பெறு',
+    'billing.updateBill': 'பில் புதுப்பி',
+    'billing.reversed': 'திரும்பப்பெறப்பட்டது',
+    'billing.confirmReverse': 'பில் {billNumber} ஐ திரும்பப் பெற வேண்டுமா? இது அனைத்து அறிக்கைகளிலிருந்தும் விலக்கப்படும்.',
+    'billing.confirmReverseBtn': 'ஆம், திரும்பப் பெறு',
+    'billing.billUpdated': 'பில் {billNumber} புதுப்பிக்கப்பட்டது',
+    'billing.reversedSuccess': 'பில் {billNumber} திரும்பப் பெறப்பட்டது',
   },
 }

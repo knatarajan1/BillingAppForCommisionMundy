@@ -234,6 +234,70 @@ export default function Settings() {
           </div>
         </div>
 
+        {/* ─── Print Options ───────────────────────────────────── */}
+        <div className="card p-6">
+          <h2 className="text-sm font-semibold text-slate-700 mb-5 pb-3 border-b border-slate-100">
+            {t('settings.printOptions')}
+          </h2>
+          <div className="space-y-5">
+
+            {/* Print address */}
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="text-sm font-medium text-slate-700">{t('settings.printAddressLabel')}</div>
+                <div className="text-xs text-slate-500 mt-0.5">{t('settings.printAddressDesc')}</div>
+              </div>
+              <button
+                onClick={() => handleChange('print_address_in_bill', values.print_address_in_bill === '0' ? '1' : '0')}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
+                  values.print_address_in_bill !== '0' ? 'bg-brand-600' : 'bg-slate-200'
+                }`}
+              >
+                <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                  values.print_address_in_bill !== '0' ? 'translate-x-5' : 'translate-x-0'
+                }`} />
+              </button>
+            </div>
+
+            {/* Print phone */}
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="text-sm font-medium text-slate-700">{t('settings.printPhoneLabel')}</div>
+                <div className="text-xs text-slate-500 mt-0.5">{t('settings.printPhoneDesc')}</div>
+              </div>
+              <button
+                onClick={() => handleChange('print_phone_in_bill', values.print_phone_in_bill === '0' ? '1' : '0')}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
+                  values.print_phone_in_bill !== '0' ? 'bg-brand-600' : 'bg-slate-200'
+                }`}
+              >
+                <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                  values.print_phone_in_bill !== '0' ? 'translate-x-5' : 'translate-x-0'
+                }`} />
+              </button>
+            </div>
+
+            {/* Print footer */}
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="text-sm font-medium text-slate-700">{t('settings.printFooterLabel')}</div>
+                <div className="text-xs text-slate-500 mt-0.5">{t('settings.printFooterDesc')}</div>
+              </div>
+              <button
+                onClick={() => handleChange('print_footer_in_bill', values.print_footer_in_bill === '0' ? '1' : '0')}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
+                  values.print_footer_in_bill !== '0' ? 'bg-brand-600' : 'bg-slate-200'
+                }`}
+              >
+                <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                  values.print_footer_in_bill !== '0' ? 'translate-x-5' : 'translate-x-0'
+                }`} />
+              </button>
+            </div>
+
+          </div>
+        </div>
+
         {/* ─── Theme colour ────────────────────────────────────── */}
         <div className="card p-6">
           <h2 className="text-sm font-semibold text-slate-700 mb-5 pb-3 border-b border-slate-100">

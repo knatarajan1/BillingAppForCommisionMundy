@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { X, Printer } from 'lucide-react'
 import { useLanguage } from '../lib/LanguageContext'
@@ -9,64 +10,66 @@ import { getShortUnitLabel } from '../lib/units'
  * Print isolation strategy:
  *  - PrintModal mounts #print-area via createPortal(…, document.body)
  *    so it is a DIRECT <body> child in the DOM.
- *  - CSS: body > *:not(#print-area) { display:none } hides everything else
- *    without touching #print-area, avoiding the Chromium print-pipeline
- *    bug where position:fixed children of display:none parents render blank.
+ *  - CSS: body > *:not(#print-area) { display:none } hides everything else.
  *
- * Layout (72mm content = 80mm page − 4mm padding each side):
- *  - Logo 40px top-left, company name to the right (flex row)
- *  - Items: 3-column table (no headers) — 48% item | 22% qty+rate | 30% total
- *  - Rate shown as sub-line under qty in the qty column
+ * Print flow:
+ *  - "Print" button calls window.electronAPI.print.bill() via IPC.
+ *  - Main process auto-selects the TVS printer (silent if found).
+ *  - On success the modal auto-closes; on cancel/error it stays open.
  */
 
 /* ─── Client Bill ─────────────────────────────────────────────── */
 export function ClientBillPrint({ bill, config, onClose }) {
   const { t, logo } = useLanguage()
-  const company  = config.company_name    || 'KKS Commission Mundy'
-  const addr     = config.company_address || ''
-  const phone    = config.company_phone   || ''
-  const currency = config.currency_symbol || '₹'
-  const showLogo = config.print_logo_in_bill === '1' && !!logo
+  const company    = config.company_name    || 'KKS Commission Mundy'
+  const addr       = config.company_address || ''
+  const phone      = config.company_phone   || ''
+  const currency   = config.currency_symbol || '₹'
+  const showLogo    = config.print_logo_in_bill === '1' && !!logo
+  const showAddr    = config.print_address_in_bill !== '0'
+  const showPhone   = config.print_phone_in_bill   !== '0'
+  const showFooter  = config.print_footer_in_bill  !== '0'
 
   const fmt = n => `${currency}${parseFloat(n || 0).toFixed(2)}`
 
   return (
     <PrintModal onClose={onClose} title={t('print.clientBill')}>
-      <div className="rcp">
+      <div className="rcp rcp--short">
 
         {/* ── Header: logo (top-left) + company name ── */}
         <div className="rcp-header">
           {showLogo && <img className="rcp-logo" src={logo} alt="" />}
           <div className="rcp-co">
             <div className="rcp-co-name">{company}</div>
-            {addr  && <div className="rcp-co-sub">{addr}</div>}
-            {phone && <div className="rcp-co-sub">{t('print.phone')}: {phone}</div>}
+            {showAddr  && addr  && <div className="rcp-co-sub">{addr}</div>}
+            {showPhone && phone && <div className="rcp-co-sub">{t('print.phone')}: {phone}</div>}
           </div>
         </div>
 
         <hr className="rcp-div" />
 
         {/* ── Bill info ── */}
-        <div className="rcp-kv">
+        <div className="rcp-kv rcp-kv--id">
           <span className="k">{t('print.billNo')}:</span>
-          <span className="v" style={{fontWeight:700}}>{bill.billNumber}</span>
+          <span className="v">{bill.billNumber}</span>
         </div>
         <div className="rcp-kv">
           <span className="k">{t('print.date')}:</span>
           <span className="v">{bill.date}</span>
         </div>
-        <div className="rcp-meta">
-          <span style={{fontWeight:600}}>{t('print.client')}:</span> {bill.clientName}
+        <div className="rcp-kv rcp-kv--name">
+          <span className="k">{t('print.client')}:</span>
+          <span className="v">{bill.clientName}</span>
         </div>
 
         <hr className="rcp-div" />
 
-        {/* ── Items table (no headers) ── */}
+        {/* ── Items table: VegName–VendorName | Qty+Rate | Price (3-col) ── */}
         <table>
           <tbody>
             {(bill.items || []).map((item, i) => (
               <tr key={i}>
-                <td className="col-item">{item.vegetableName}</td>
+                <td className="col-item">{item.vegetableShortName || item.vegetableName} - {item.vendorName}</td>
                 <td className="col-qty">
                   {item.units} {getShortUnitLabel(item.unitType)}
                   <div className="item-sub">@ {fmt(item.rate)}</div>
@@ -106,10 +109,12 @@ export function ClientBillPrint({ bill, config, onClose }) {
         <hr className="rcp-div2" />
 
         {/* ── Footer ── */}
-        <div className="rcp-footer">
-          <p>{t('print.thankYou')}</p>
-          <p><strong>{t('print.visitAgain')}</strong></p>
-        </div>
+        {showFooter && (
+          <div className="rcp-footer">
+            <p>{t('print.thankYou')}</p>
+            <p><strong>{t('print.visitAgain')}</strong></p>
+          </div>
+        )}
 
       </div>
     </PrintModal>
@@ -119,37 +124,40 @@ export function ClientBillPrint({ bill, config, onClose }) {
 /* ─── Vendor Bill ─────────────────────────────────────────────── */
 export function VendorBillPrint({ bill, config, onClose }) {
   const { t, logo } = useLanguage()
-  const company  = config.company_name    || 'KKS Commission Mundy'
-  const addr     = config.company_address || ''
-  const phone    = config.company_phone   || ''
-  const currency = config.currency_symbol || '₹'
-  const showLogo = config.print_logo_in_bill === '1' && !!logo
+  const company    = config.company_name    || 'KKS Commission Mundy'
+  const addr       = config.company_address || ''
+  const phone      = config.company_phone   || ''
+  const currency   = config.currency_symbol || '₹'
+  const showLogo    = config.print_logo_in_bill === '1' && !!logo
+  const showAddr    = config.print_address_in_bill !== '0'
+  const showPhone   = config.print_phone_in_bill   !== '0'
+  const showFooter  = config.print_footer_in_bill  !== '0'
 
   const fmt = n => `${currency}${parseFloat(n || 0).toFixed(2)}`
 
   return (
     <PrintModal onClose={onClose} title={t('print.vendorBill')}>
-      <div className="rcp">
+      <div className="rcp rcp--vendor-bill">
 
         {/* ── Header: logo (top-left) + company name ── */}
         <div className="rcp-header">
           {showLogo && <img className="rcp-logo" src={logo} alt="" />}
           <div className="rcp-co">
             <div className="rcp-co-name">{company}</div>
-            {addr  && <div className="rcp-co-sub">{addr}</div>}
-            {phone && <div className="rcp-co-sub">{t('print.phone')}: {phone}</div>}
+            {showAddr  && addr  && <div className="rcp-co-sub">{addr}</div>}
+            {showPhone && phone && <div className="rcp-co-sub">{t('print.phone')}: {phone}</div>}
           </div>
         </div>
 
         <hr className="rcp-div2" />
 
         {/* ── Vendor info ── */}
-        <div className="rcp-meta" style={{fontWeight:700, fontSize:'13px'}}>
+        <div className="rcp-meta" style={{fontWeight:700, fontSize:'11px'}}>
           {t('print.vendorBill')}
         </div>
-        <div className="rcp-kv">
+        <div className="rcp-kv rcp-kv--name">
           <span className="k">{t('print.vendor')}:</span>
-          <span className="v" style={{fontWeight:600}}>{bill.vendorName}</span>
+          <span className="v">{bill.vendorName}</span>
         </div>
         {bill.vendorPhone && (
           <div className="rcp-kv">
@@ -193,10 +201,12 @@ export function VendorBillPrint({ bill, config, onClose }) {
         <hr className="rcp-div2" />
 
         {/* ── Footer ── */}
-        <div className="rcp-footer">
-          <p>{t('print.thankYou')}</p>
-          <p><strong>{t('print.visitAgain')}</strong></p>
-        </div>
+        {showFooter && (
+          <div className="rcp-footer">
+            <p>{t('print.thankYou')}</p>
+            <p><strong>{t('print.visitAgain')}</strong></p>
+          </div>
+        )}
 
       </div>
     </PrintModal>
@@ -206,11 +216,14 @@ export function VendorBillPrint({ bill, config, onClose }) {
 /* ─── Vendor Payment Summary Receipt ─────────────────────────── */
 export function VendorSummaryPrint({ data, config, onClose }) {
   const { t, logo } = useLanguage()
-  const company  = config.company_name    || 'KKS Commission Mundy'
-  const addr     = config.company_address || ''
-  const phone    = config.company_phone   || ''
-  const currency = config.currency_symbol || '₹'
-  const showLogo = config.print_logo_in_bill === '1' && !!logo
+  const company    = config.company_name    || 'KKS Commission Mundy'
+  const addr       = config.company_address || ''
+  const phone      = config.company_phone   || ''
+  const currency   = config.currency_symbol || '₹'
+  const showLogo    = config.print_logo_in_bill === '1' && !!logo
+  const showAddr    = config.print_address_in_bill !== '0'
+  const showPhone   = config.print_phone_in_bill   !== '0'
+  const showFooter  = config.print_footer_in_bill  !== '0'
 
   const fmt = n => `${currency}${parseFloat(n || 0).toFixed(2)}`
   const grandTotal = data.rows.reduce((s, r) => s + (parseFloat(r.totalAmount) || 0), 0)
@@ -224,14 +237,14 @@ export function VendorSummaryPrint({ data, config, onClose }) {
           {showLogo && <img className="rcp-logo" src={logo} alt="" />}
           <div className="rcp-co">
             <div className="rcp-co-name">{company}</div>
-            {addr  && <div className="rcp-co-sub">{addr}</div>}
-            {phone && <div className="rcp-co-sub">{t('print.phone')}: {phone}</div>}
+            {showAddr  && addr  && <div className="rcp-co-sub">{addr}</div>}
+            {showPhone && phone && <div className="rcp-co-sub">{t('print.phone')}: {phone}</div>}
           </div>
         </div>
 
         <hr className="rcp-div2" />
 
-        <div className="rcp-meta" style={{fontWeight:700, fontSize:'13px'}}>
+        <div className="rcp-meta" style={{fontWeight:700, fontSize:'11px'}}>
           {t('print.vendorSummary')}
         </div>
         {(data.fromDate || data.toDate) && (
@@ -251,7 +264,7 @@ export function VendorSummaryPrint({ data, config, onClose }) {
                 <td style={{width:'65%', padding:'2px 2px', verticalAlign:'top', wordBreak:'break-word'}}>
                   {row.vendorName}
                 </td>
-                <td style={{width:'35%', textAlign:'right', padding:'2px 2px', fontWeight:600, whiteSpace:'nowrap'}}>
+                <td className="rcp-amt" style={{width:'35%', textAlign:'right', padding:'2px 2px', whiteSpace:'nowrap'}}>
                   {fmt(row.totalAmount)}
                 </td>
               </tr>
@@ -270,10 +283,12 @@ export function VendorSummaryPrint({ data, config, onClose }) {
         <hr className="rcp-div2" />
 
         {/* ── Footer ── */}
-        <div className="rcp-footer">
-          <p>{t('print.thankYou')}</p>
-          <p><strong>{t('print.visitAgain')}</strong></p>
-        </div>
+        {showFooter && (
+          <div className="rcp-footer">
+            <p>{t('print.thankYou')}</p>
+            <p><strong>{t('print.visitAgain')}</strong></p>
+          </div>
+        )}
 
       </div>
     </PrintModal>
@@ -281,77 +296,50 @@ export function VendorSummaryPrint({ data, config, onClose }) {
 }
 
 /* ─── Farmer Receipt (Produce Arrival Slip) ───────────────────── */
-export function FarmerReceiptPrint({ receipt, config, onClose }) {
-  const { t, logo } = useLanguage()
-  const company  = config.company_name    || 'KKS Commission Mundy'
-  const addr     = config.company_address || ''
-  const phone    = config.company_phone   || ''
-  const showLogo = config.print_logo_in_bill === '1' && !!logo
+export function FarmerReceiptPrint({ receipt, config = {}, onClose }) {
+  const { t } = useLanguage()
 
   return (
     <PrintModal onClose={onClose} title={t('print.farmerReceipt')}>
-      <div className="rcp">
+      <div className="rcp rcp--farmer-receipt">
 
-        {/* ── Header: logo + company name ── */}
-        <div className="rcp-header">
-          {showLogo && <img className="rcp-logo" src={logo} alt="" />}
-          <div className="rcp-co">
-            <div className="rcp-co-name">{company}</div>
-            {addr  && <div className="rcp-co-sub">{addr}</div>}
-            {phone && <div className="rcp-co-sub">{t('print.phone')}: {phone}</div>}
-          </div>
-        </div>
-
-        <hr className="rcp-div" />
-
-        {/* ── Receipt meta ── */}
-        <div className="rcp-meta" style={{fontWeight:700, fontSize:'13px'}}>
-          {t('print.farmerReceipt')}
-        </div>
-        <div className="rcp-kv">
+        {/* ── Receipt meta only — no company header or footer ── */}
+        <div className="rcp-kv rcp-kv--id">
           <span className="k">{t('print.receiptNo')}:</span>
-          <span className="v" style={{fontWeight:700}}>{receipt.receiptNumber}</span>
+          <span className="v">{receipt.receiptNumber}</span>
         </div>
         <div className="rcp-kv">
           <span className="k">{t('print.date')}:</span>
           <span className="v">{receipt.date}</span>
         </div>
-        <div className="rcp-meta">
-          <span style={{fontWeight:600}}>{t('print.client')}:</span> {receipt.clientName}
+        <div className="rcp-kv rcp-kv--name">
+          <span className="k">{t('print.client')}:</span>
+          <span className="v">{receipt.clientName}</span>
         </div>
 
         <hr className="rcp-div" />
 
-        {/* ── Items table: S.No | Vegetable | Weight (blank) | Amount (blank) ── */}
+        {/* ── Items table: Vegetable | Weight (blank) | Amount (blank) — no column headers ── */}
         <table style={{tableLayout:'fixed', width:'100%'}}>
-          <thead>
-            <tr style={{fontSize:'9px', color:'#555'}}>
-              <th style={{width:'8%',  textAlign:'center', padding:'1px 2px'}}>{t('print.itemNo')}</th>
-              <th style={{width:'47%', textAlign:'left',   padding:'1px 2px'}}>{t('print.vegetable')}</th>
-              <th style={{width:'22%', textAlign:'center', padding:'1px 2px'}}>{t('print.weight')}</th>
-              <th style={{width:'23%', textAlign:'right',  padding:'1px 2px'}}>{t('print.price')}</th>
-            </tr>
-            <tr><td colSpan={4} style={{borderTop:'1px dashed #ccc', padding:0}}></td></tr>
-          </thead>
+          <colgroup>
+            <col style={{width:'55%'}} />
+            <col style={{width:'22%'}} />
+            <col style={{width:'23%'}} />
+          </colgroup>
           <tbody>
             {(receipt.items || []).map((item, i) => (
               <tr key={i} style={{fontSize:'11px'}}>
-                <td style={{padding:'4px 2px', textAlign:'center', verticalAlign:'top', fontWeight:600}}>{i + 1}</td>
-                <td style={{padding:'4px 2px', verticalAlign:'top', wordBreak:'break-word'}}>{item.vegetableName}</td>
+                <td style={{padding:'4px 2px', verticalAlign:'top', wordBreak:'break-word'}}>
+                  <div>{item.vegetableName}</div>
+                  {/* blank dotted line below the vegetable name — space to write vendor name manually */}
+                  <div style={{marginTop:'8px', height:'10px', borderBottom:'1px dotted #aaa'}}></div>
+                </td>
                 <td style={{padding:'4px 2px', textAlign:'center', verticalAlign:'top', borderBottom:'1px solid #ddd'}}>&nbsp;</td>
                 <td style={{padding:'4px 2px', textAlign:'right',  verticalAlign:'top', borderBottom:'1px solid #ddd'}}>&nbsp;</td>
               </tr>
             ))}
           </tbody>
         </table>
-
-        <hr className="rcp-div" />
-
-        {/* ── Footer ── */}
-        <div className="rcp-footer">
-          <p>{t('print.thankYou')}</p>
-          <p><strong>{t('print.visitAgain')}</strong></p>
-        </div>
 
       </div>
     </PrintModal>
@@ -361,6 +349,22 @@ export function FarmerReceiptPrint({ receipt, config, onClose }) {
 /* ─── Shared print modal wrapper ──────────────────────────────── */
 function PrintModal({ title, children, onClose }) {
   const { t } = useLanguage()
+  const [printing, setPrinting] = useState(false)
+
+  async function handlePrint() {
+    setPrinting(true)
+    try {
+      const result = await window.electronAPI.print.bill()
+      // Auto-close on successful print; keep open on cancel/error
+      if (result && result.ok) {
+        onClose()
+      }
+    } catch {
+      // keep modal open
+    } finally {
+      setPrinting(false)
+    }
+  }
 
   return (
     <>
@@ -372,8 +376,8 @@ function PrintModal({ title, children, onClose }) {
           <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
             <h2 className="text-sm font-semibold text-slate-800">{title} — {t('print.preview')}</h2>
             <div className="flex items-center gap-2">
-              <button className="btn-primary py-1 text-xs" onClick={() => window.print()}>
-                <Printer size={13} /> {t('print.print')}
+              <button className="btn-primary py-1 text-xs" onClick={handlePrint} disabled={printing}>
+                <Printer size={13} /> {printing ? t('print.printing') : t('print.print')}
               </button>
               <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500">
                 <X size={15} />

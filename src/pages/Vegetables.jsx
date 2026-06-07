@@ -13,11 +13,13 @@ export default function Vegetables() {
 
   const COLUMNS = [
     { key: 'name', label: t('common.name') },
+    { key: 'shortName', label: t('vegetables.shortName'), render: item => item.shortName || '—' },
     { key: 'unit', label: t('vegetables.unit'), render: item => getUnitLabel(item.unit, t) },
   ]
 
   const FIELDS = [
     { key: 'name', label: t('vegetables.name'), required: true, placeholder: t('vegetables.placeholder') },
+    { key: 'shortName', label: t('vegetables.shortName'), placeholder: t('vegetables.shortNamePlaceholder') },
     {
       key: 'unit', label: t('vegetables.unit'), type: 'select',
       defaultValue: 'Kg',

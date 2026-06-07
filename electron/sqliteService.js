@@ -55,8 +55,11 @@ const DEFAULT_CONFIGS = [
   { key: 'company_phone',        value: '',                     label: 'Company Phone' },
   { key: 'bill_prefix',          value: 'BILL',                 label: 'Bill Number Prefix' },
   { key: 'currency_symbol',      value: '₹',                   label: 'Currency Symbol' },
-  { key: 'theme_color',          value: 'green',                label: 'App Theme Colour' },
-  { key: 'print_logo_in_bill',  value: '1',                    label: 'Print Logo on Bill' },
+  { key: 'theme_color',           value: 'green',  label: 'App Theme Colour' },
+  { key: 'print_logo_in_bill',   value: '1',      label: 'Print Logo on Bill' },
+  { key: 'print_address_in_bill',value: '1',      label: 'Print company address in bills' },
+  { key: 'print_phone_in_bill',  value: '1',      label: 'Print company phone in bills' },
+  { key: 'print_footer_in_bill', value: '1',      label: 'Print footer in bills' },
 ]
 
 const SCHEMA = `
@@ -196,6 +199,43 @@ async function initDb({ userDataPath, exePath } = {}) {
     if (cols.some(c => c.name === 'unit_type')) db.exec('ALTER TABLE FarmerReceiptItems DROP COLUMN unit_type')
   } catch (_) { /* table may not exist on very first run — ignore */ }
 
+  // Migration v2.4.0: add status column to Transactions for edit/reverse support
+  try {
+    const txnCols = all("PRAGMA table_info(Transactions)")
+    if (!txnCols.some(c => c.name === 'status')) {
+      db.exec("ALTER TABLE Transactions ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
+    }
+  } catch (_) {}
+
+  // Migration v2.5.0: add short_name to Vegetables
+  try {
+    const vegCols = all("PRAGMA table_info(Vegetables)")
+    if (!vegCols.some(c => c.name === 'short_name')) {
+      db.exec("ALTER TABLE Vegetables ADD COLUMN short_name TEXT NOT NULL DEFAULT ''")
+    }
+  } catch (_) {}
+
+  // Migration v2.5.0: add vegetable_short_name to TransactionItems
+  try {
+    const itemCols = all("PRAGMA table_info(TransactionItems)")
+    if (!itemCols.some(c => c.name === 'vegetable_short_name')) {
+      db.exec("ALTER TABLE TransactionItems ADD COLUMN vegetable_short_name TEXT NOT NULL DEFAULT ''")
+    }
+  } catch (_) {}
+
+  // Migration v2.5.0: add vegetable_short_name to FarmerReceiptItems
+  try {
+    const frecCols = all("PRAGMA table_info(FarmerReceiptItems)")
+    if (!frecCols.some(c => c.name === 'vegetable_short_name')) {
+      db.exec("ALTER TABLE FarmerReceiptItems ADD COLUMN vegetable_short_name TEXT NOT NULL DEFAULT ''")
+    }
+  } catch (_) {}
+
+  // Migration v2.5.1: remove print_vegetable_name config (now hardcoded per bill type)
+  try {
+    db.run("DELETE FROM Config WHERE key = 'print_vegetable_name'")
+  } catch (_) {}
+
   // Seed default config rows (INSERT OR IGNORE)
   for (const c of DEFAULT_CONFIGS) {
     db.run(
@@ -235,6 +275,8 @@ function clearAllData() {
   try {
     db.exec('DELETE FROM FarmerReceiptItems')
     db.exec('DELETE FROM FarmerReceipts')
+    db.exec('DELETE FROM VendorPayments')
+    db.exec('DELETE FROM CashDrawer')
     db.exec('DELETE FROM TransactionItems')
     db.exec('DELETE FROM Transactions')
     db.exec('DELETE FROM Clients')
@@ -274,21 +316,24 @@ function updateConfig(key, value) {
 
 function getAllVegetables() {
   return all('SELECT * FROM Vegetables ORDER BY name ASC').map(r => ({
-    vegetableId: r.vegetable_id, name: r.name, unit: r.unit, createdAt: r.created_at,
+    vegetableId: r.vegetable_id, name: r.name, unit: r.unit,
+    shortName: r.short_name || '', createdAt: r.created_at,
   }))
 }
 
-function addVegetable({ name, unit }) {
+function addVegetable({ name, unit, shortName }) {
   if (!name?.trim()) throw new Error('Vegetable name is required')
   const id = 'VEG-' + uuidv4().slice(0, 8).toUpperCase()
-  db.run('INSERT INTO Vegetables (vegetable_id, name, unit) VALUES (?, ?, ?)', [id, name.trim(), unit || 'Kg'])
+  db.run('INSERT INTO Vegetables (vegetable_id, name, unit, short_name) VALUES (?, ?, ?, ?)',
+    [id, name.trim(), unit || 'Kg', (shortName || '').trim()])
   persist()
-  return { vegetableId: id, name: name.trim(), unit: unit || 'Kg' }
+  return { vegetableId: id, name: name.trim(), unit: unit || 'Kg', shortName: (shortName || '').trim() }
 }
 
-function updateVegetable({ vegetableId, name, unit }) {
+function updateVegetable({ vegetableId, name, unit, shortName }) {
   if (!name?.trim()) throw new Error('Vegetable name is required')
-  db.run('UPDATE Vegetables SET name = ?, unit = ? WHERE vegetable_id = ?', [name.trim(), unit || 'Kg', vegetableId])
+  db.run('UPDATE Vegetables SET name = ?, unit = ?, short_name = ? WHERE vegetable_id = ?',
+    [name.trim(), unit || 'Kg', (shortName || '').trim(), vegetableId])
   persist()
   return true
 }
@@ -372,6 +417,17 @@ function getNextBillNumber(date) {
   return `${datePart}-${String(maxNum + 1).padStart(3, '0')}`
 }
 
+// Chit cost per item: weight-based units (Kg, Ton) = 1 chit; count-based = qty chits
+function calcChitCost(items, chitCostPerRecord) {
+  const chitCost = parseFloat(chitCostPerRecord) || 0
+  return parseFloat(
+    items.reduce((s, item) => {
+      const isWeight = item.unitType === 'Kg' || item.unitType === 'Ton'
+      return s + (isWeight ? 1 : (parseFloat(item.units) || 1)) * chitCost
+    }, 0).toFixed(2)
+  )
+}
+
 function saveTransaction(data) {
   const { clientId, clientName, items, commissionRate, chitCostPerRecord, date } = data
   if (!clientId) throw new Error('Client is required')
@@ -383,7 +439,7 @@ function saveTransaction(data) {
   const subTotal = items.reduce((s, i) => s + (parseFloat(i.price) || 0), 0)
   const commissionAmount = parseFloat((subTotal * rate / 100).toFixed(2))
   const itemCount        = items.length
-  const totalChitCost    = parseFloat((itemCount * chitCost).toFixed(2))
+  const totalChitCost    = calcChitCost(items, chitCost)
   const netAmount        = parseFloat((subTotal - commissionAmount - totalChitCost).toFixed(2))
 
   const billNumber    = getNextBillNumber(date)
@@ -404,13 +460,13 @@ function saveTransaction(data) {
     for (const item of items) {
       db.run(
         `INSERT INTO TransactionItems
-          (item_id, transaction_id, bill_number, vegetable_id, vegetable_name,
+          (item_id, transaction_id, bill_number, vegetable_id, vegetable_name, vegetable_short_name,
            vendor_id, vendor_name, units, unit_type, rate, price, date)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [
           'ITM-' + uuidv4().slice(0, 8).toUpperCase(),
           transactionId, billNumber,
-          item.vegetableId, item.vegetableName,
+          item.vegetableId, item.vegetableName, item.vegetableShortName || '',
           item.vendorId, item.vendorName,
           parseFloat(item.units) || 0, item.unitType || 'Kg',
           parseFloat(item.rate) || 0, parseFloat(item.price) || 0,
@@ -456,35 +512,58 @@ function getClientBills(clientId, date) {
   else if (date)         txns = all('SELECT * FROM Transactions WHERE date = ? ORDER BY created_at DESC', [date])
   else                   txns = all('SELECT * FROM Transactions ORDER BY date DESC, created_at DESC')
 
+  if (txns.length === 0) return []
+
+  // Batch-fetch all items in one query instead of N individual queries
+  const ids = txns.map(t => t.transaction_id)
+  const placeholders = ids.map(() => '?').join(',')
+  const allItems = all(
+    `SELECT * FROM TransactionItems WHERE transaction_id IN (${placeholders})`,
+    ids
+  )
+  const itemsByTxn = {}
+  for (const item of allItems) {
+    if (!itemsByTxn[item.transaction_id]) itemsByTxn[item.transaction_id] = []
+    itemsByTxn[item.transaction_id].push(mapItem(item))
+  }
+
   return txns.map(txn => ({
     ...mapTxn(txn),
-    items: all('SELECT * FROM TransactionItems WHERE transaction_id = ?', [txn.transaction_id]).map(mapItem),
+    items: itemsByTxn[txn.transaction_id] || [],
   }))
 }
 
 function getVendorBills(vendorId, date) {
   let items
-  if (vendorId && date) items = all('SELECT * FROM TransactionItems WHERE vendor_id = ? AND date = ? ORDER BY date DESC', [vendorId, date])
-  else if (vendorId)    items = all('SELECT * FROM TransactionItems WHERE vendor_id = ? ORDER BY date DESC', [vendorId])
-  else if (date)        items = all('SELECT * FROM TransactionItems WHERE date = ? ORDER BY date DESC', [date])
-  else                  items = all('SELECT * FROM TransactionItems ORDER BY date DESC')
+  const activeJoin = `JOIN Transactions t ON t.transaction_id = ti.transaction_id AND (t.status IS NULL OR t.status != 'reversed')`
+  if (vendorId && date) items = all(`SELECT ti.* FROM TransactionItems ti ${activeJoin} WHERE ti.vendor_id = ? AND ti.date = ? ORDER BY ti.date DESC`, [vendorId, date])
+  else if (vendorId)    items = all(`SELECT ti.* FROM TransactionItems ti ${activeJoin} WHERE ti.vendor_id = ? ORDER BY ti.date DESC`, [vendorId])
+  else if (date)        items = all(`SELECT ti.* FROM TransactionItems ti ${activeJoin} WHERE ti.date = ? ORDER BY ti.date DESC`, [date])
+  else                  items = all(`SELECT ti.* FROM TransactionItems ti ${activeJoin} ORDER BY ti.date DESC`)
+
+  // Batch-fetch all vendor phones in one query
+  const vendorIds = [...new Set(items.map(r => r.vendor_id))]
+  const phoneMap = {}
+  if (vendorIds.length > 0) {
+    const ph = vendorIds.map(() => '?').join(',')
+    all(`SELECT vendor_id, phone FROM Vendors WHERE vendor_id IN (${ph})`, vendorIds)
+      .forEach(v => { phoneMap[v.vendor_id] = v.phone || '' })
+  }
 
   const grouped = {}
   for (const r of items) {
     const key = `${r.vendor_id}_${r.date}`
     if (!grouped[key]) {
-      // Fetch vendor phone from Vendors table
-      const vRow = get('SELECT phone FROM Vendors WHERE vendor_id = ?', [r.vendor_id])
       grouped[key] = {
         vendorId: r.vendor_id, vendorName: r.vendor_name,
-        vendorPhone: vRow ? (vRow.phone || '') : '',
+        vendorPhone: phoneMap[r.vendor_id] ?? '',
         date: r.date, items: [],
       }
     }
     grouped[key].items.push({
       billNumber: r.bill_number, transactionId: r.transaction_id,
-      vegetableName: r.vegetable_name, units: r.units,
-      unitType: r.unit_type, rate: r.rate, price: r.price,
+      vegetableName: r.vegetable_name, vegetableShortName: r.vegetable_short_name || '',
+      units: r.units, unitType: r.unit_type, rate: r.rate, price: r.price,
     })
   }
 
@@ -500,6 +579,7 @@ function getVendorSummary(fromDate, toDate) {
            COALESCE(v.phone, '') AS vendor_phone,
            ROUND(SUM(ti.price), 2) AS total_amount
     FROM TransactionItems ti
+    JOIN Transactions t ON t.transaction_id = ti.transaction_id AND (t.status IS NULL OR t.status != 'reversed')
     LEFT JOIN Vendors v ON v.vendor_id = ti.vendor_id
     WHERE 1=1`
   const params = []
@@ -525,13 +605,86 @@ function mapTxn(r) {
     commissionAmount: r.commission_amount, chitCostPerRecord: r.chit_cost_per_record,
     itemCount: r.item_count, totalChitCost: r.total_chit_cost,
     netAmount: r.net_amount, createdAt: r.created_at,
+    status: r.status || 'active',
   }
+}
+
+function updateTransaction(data) {
+  const { transactionId, clientId, clientName, items, commissionRate, chitCostPerRecord, date } = data
+  if (!transactionId) throw new Error('Transaction ID is required')
+  if (!clientId) throw new Error('Client is required')
+  if (!items || items.length === 0) throw new Error('At least one item is required')
+  if (!date) throw new Error('Date is required')
+
+  const existing = get('SELECT * FROM Transactions WHERE transaction_id = ?', [transactionId])
+  if (!existing) throw new Error('Transaction not found')
+  if ((existing.status || 'active') === 'reversed') throw new Error('Cannot edit a reversed bill')
+
+  const rate     = parseFloat(commissionRate) || 0
+  const chitCost = parseFloat(chitCostPerRecord) || 0
+  const subTotal = items.reduce((s, i) => s + (parseFloat(i.price) || 0), 0)
+  const commissionAmount = parseFloat((subTotal * rate / 100).toFixed(2))
+  const itemCount        = items.length
+  const totalChitCost    = calcChitCost(items, chitCost)
+  const netAmount        = parseFloat((subTotal - commissionAmount - totalChitCost).toFixed(2))
+  const billNumber       = existing.bill_number
+
+  db.run('BEGIN')
+  try {
+    db.run(
+      `UPDATE Transactions SET
+         client_id = ?, client_name = ?, date = ?,
+         sub_total = ?, commission_rate = ?, commission_amount = ?,
+         chit_cost_per_record = ?, item_count = ?, total_chit_cost = ?, net_amount = ?
+       WHERE transaction_id = ?`,
+      [clientId, clientName, date, subTotal, rate, commissionAmount,
+       chitCost, itemCount, totalChitCost, netAmount, transactionId]
+    )
+    db.run('DELETE FROM TransactionItems WHERE transaction_id = ?', [transactionId])
+    for (const item of items) {
+      db.run(
+        `INSERT INTO TransactionItems
+          (item_id, transaction_id, bill_number, vegetable_id, vegetable_name, vegetable_short_name,
+           vendor_id, vendor_name, units, unit_type, rate, price, date)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [
+          'ITM-' + uuidv4().slice(0, 8).toUpperCase(),
+          transactionId, billNumber,
+          item.vegetableId, item.vegetableName, item.vegetableShortName || '',
+          item.vendorId, item.vendorName,
+          parseFloat(item.units) || 0, item.unitType || 'Kg',
+          parseFloat(item.rate) || 0, parseFloat(item.price) || 0,
+          date,
+        ]
+      )
+    }
+    db.run('COMMIT')
+  } catch (err) {
+    db.run('ROLLBACK')
+    throw err
+  }
+  persist()
+
+  return {
+    transactionId, billNumber, clientId, clientName, items, date,
+    subTotal, commissionRate: rate, commissionAmount,
+    chitCostPerRecord: chitCost, itemCount, totalChitCost, netAmount, status: 'active',
+  }
+}
+
+function reverseTransaction(transactionId) {
+  if (!transactionId) throw new Error('Transaction ID is required')
+  const existing = get('SELECT transaction_id FROM Transactions WHERE transaction_id = ?', [transactionId])
+  if (!existing) throw new Error('Transaction not found')
+  run("UPDATE Transactions SET status = 'reversed' WHERE transaction_id = ?", [transactionId])
+  return true
 }
 
 function mapItem(r) {
   return {
     itemId: r.item_id, transactionId: r.transaction_id, billNumber: r.bill_number,
     vegetableId: r.vegetable_id, vegetableName: r.vegetable_name,
+    vegetableShortName: r.vegetable_short_name || '',
     vendorId: r.vendor_id, vendorName: r.vendor_name,
     units: r.units, unitType: r.unit_type, rate: r.rate, price: r.price, date: r.date,
   }
@@ -543,7 +696,7 @@ function getCashDrawerByDate(date) {
   if (!date) throw new Error('Date is required')
   const drawer = get('SELECT * FROM CashDrawer WHERE date = ?', [date])
   const txnRow = get(
-    "SELECT COALESCE(ROUND(SUM(net_amount), 2), 0) AS total FROM Transactions WHERE date = ?",
+    "SELECT COALESCE(ROUND(SUM(net_amount), 2), 0) AS total FROM Transactions WHERE date = ? AND (status IS NULL OR status != 'reversed')",
     [date]
   )
   const openingAmount = drawer ? (parseFloat(drawer.opening_amount) || 0) : 0
@@ -591,13 +744,18 @@ function resetCashDrawer(date) {
 }
 
 function getCashDrawerHistory(fromDate, toDate) {
+  // Use a pre-aggregated JOIN instead of a correlated subquery per row
   let sql = `
     SELECT cd.date, cd.opening_amount,
-           COALESCE(
-             (SELECT ROUND(SUM(t.net_amount), 2) FROM Transactions t WHERE t.date = cd.date),
-             0
-           ) AS total_paid
-    FROM CashDrawer cd WHERE 1=1`
+           COALESCE(t_agg.total_paid, 0) AS total_paid
+    FROM CashDrawer cd
+    LEFT JOIN (
+      SELECT date, ROUND(SUM(net_amount), 2) AS total_paid
+      FROM Transactions
+      WHERE (status IS NULL OR status != 'reversed')
+      GROUP BY date
+    ) t_agg ON t_agg.date = cd.date
+    WHERE 1=1`
   const params = []
   if (fromDate) { sql += ' AND cd.date >= ?'; params.push(fromDate) }
   if (toDate)   { sql += ' AND cd.date <= ?'; params.push(toDate) }
@@ -623,6 +781,7 @@ function getVendorBillsByDate(date) {
     `SELECT ti.vendor_id, ti.vendor_name,
             ROUND(SUM(ti.price), 2) AS bill_amount
      FROM TransactionItems ti
+     JOIN Transactions t ON t.transaction_id = ti.transaction_id AND (t.status IS NULL OR t.status != 'reversed')
      WHERE ti.date = ?
      GROUP BY ti.vendor_id, ti.vendor_name
      HAVING SUM(ti.price) > 0
@@ -630,11 +789,19 @@ function getVendorBillsByDate(date) {
     [date]
   )
 
+  // Batch-fetch all payments for this date in one query
+  const paymentMap = {}
+  if (vendorBills.length > 0) {
+    const vids = vendorBills.map(vb => vb.vendor_id)
+    const ph = vids.map(() => '?').join(',')
+    all(
+      `SELECT * FROM VendorPayments WHERE bill_date = ? AND vendor_id IN (${ph})`,
+      [date, ...vids]
+    ).forEach(p => { paymentMap[p.vendor_id] = p })
+  }
+
   return vendorBills.map(vb => {
-    const payment = get(
-      'SELECT * FROM VendorPayments WHERE vendor_id = ? AND bill_date = ?',
-      [vb.vendor_id, date]
-    )
+    const payment       = paymentMap[vb.vendor_id] || null
     const billAmt       = parseFloat(vb.bill_amount) || 0
     const storedPaidAmt = payment ? (parseFloat(payment.paid_amount) || 0) : 0
     // isStale: stored paid exceeds current bill (bill reduced after payment was recorded)
@@ -717,6 +884,7 @@ function getVendorPaymentReport(vendorId) {
            ROUND(SUM(ti.price), 2) AS total_bill,
            COALESCE(vp_agg.total_paid, 0) AS total_paid
     FROM TransactionItems ti
+    JOIN Transactions t ON t.transaction_id = ti.transaction_id AND (t.status IS NULL OR t.status != 'reversed')
     LEFT JOIN (
       SELECT vendor_id, ROUND(SUM(paid_amount), 2) AS total_paid
       FROM VendorPayments
@@ -751,6 +919,7 @@ function getVendorPaymentDetail(vendorId) {
            COALESCE(vp.paid_amount, 0) AS paid_amount,
            vp.payment_id, vp.created_at, vp.updated_at
     FROM TransactionItems ti
+    JOIN Transactions t ON t.transaction_id = ti.transaction_id AND (t.status IS NULL OR t.status != 'reversed')
     LEFT JOIN VendorPayments vp
       ON vp.vendor_id = ti.vendor_id AND vp.bill_date = ti.date
     WHERE 1=1`
@@ -812,12 +981,12 @@ function saveFarmerReceipt(data) {
     for (const item of items) {
       db.run(
         `INSERT INTO FarmerReceiptItems
-          (item_id, receipt_id, receipt_number, vegetable_id, vegetable_name)
-         VALUES (?, ?, ?, ?, ?)`,
+          (item_id, receipt_id, receipt_number, vegetable_id, vegetable_name, vegetable_short_name)
+         VALUES (?, ?, ?, ?, ?, ?)`,
         [
           'RCI-' + uuidv4().slice(0, 8).toUpperCase(),
           receiptId, receiptNumber,
-          item.vegetableId, item.vegetableName,
+          item.vegetableId, item.vegetableName, item.vegetableShortName || '',
         ]
       )
     }
@@ -834,11 +1003,42 @@ function saveFarmerReceipt(data) {
   }
 }
 
+function _attachReceiptItems(receipts) {
+  if (receipts.length === 0) return []
+  const ids = receipts.map(r => r.receipt_id)
+  const ph  = ids.map(() => '?').join(',')
+  const allItems = all(
+    `SELECT * FROM FarmerReceiptItems WHERE receipt_id IN (${ph}) ORDER BY created_at ASC`,
+    ids
+  )
+  const itemsByReceipt = {}
+  for (const i of allItems) {
+    if (!itemsByReceipt[i.receipt_id]) itemsByReceipt[i.receipt_id] = []
+    itemsByReceipt[i.receipt_id].push({
+      itemId:             i.item_id,
+      receiptId:          i.receipt_id,
+      receiptNumber:      i.receipt_number,
+      vegetableId:        i.vegetable_id,
+      vegetableName:      i.vegetable_name,
+      vegetableShortName: i.vegetable_short_name || '',
+    })
+  }
+  return receipts.map(r => ({
+    receiptId:     r.receipt_id,
+    receiptNumber: r.receipt_number,
+    clientId:      r.client_id,
+    clientName:    r.client_name,
+    date:          r.date,
+    createdAt:     r.created_at,
+    items:         itemsByReceipt[r.receipt_id] || [],
+  }))
+}
+
 function getFarmerReceiptsByDate(date) {
   const receipts = date
     ? all('SELECT * FROM FarmerReceipts WHERE date = ? ORDER BY created_at DESC', [date])
     : all('SELECT * FROM FarmerReceipts ORDER BY date DESC, created_at DESC')
-  return receipts.map(r => mapFarmerReceipt(r))
+  return _attachReceiptItems(receipts)
 }
 
 function getFarmerReceiptsByClient(clientId, date) {
@@ -847,33 +1047,17 @@ function getFarmerReceiptsByClient(clientId, date) {
   if (clientId) { sql += ' AND client_id = ?'; params.push(clientId) }
   if (date)     { sql += ' AND date = ?';      params.push(date) }
   sql += ' ORDER BY date DESC, created_at DESC'
-  return all(sql, params).map(r => mapFarmerReceipt(r))
+  return _attachReceiptItems(all(sql, params))
 }
 
 function getFarmerReceiptById(receiptId) {
   const r = get('SELECT * FROM FarmerReceipts WHERE receipt_id = ?', [receiptId])
-  return r ? mapFarmerReceipt(r) : null
+  if (!r) return null
+  return _attachReceiptItems([r])[0]
 }
 
 function mapFarmerReceipt(r) {
-  return {
-    receiptId:     r.receipt_id,
-    receiptNumber: r.receipt_number,
-    clientId:      r.client_id,
-    clientName:    r.client_name,
-    date:          r.date,
-    createdAt:     r.created_at,
-    items: all(
-      'SELECT * FROM FarmerReceiptItems WHERE receipt_id = ? ORDER BY created_at ASC',
-      [r.receipt_id]
-    ).map(i => ({
-      itemId:        i.item_id,
-      receiptId:     i.receipt_id,
-      receiptNumber: i.receipt_number,
-      vegetableId:   i.vegetable_id,
-      vegetableName: i.vegetable_name,
-    })),
-  }
+  return _attachReceiptItems([r])[0]
 }
 
 module.exports = {
@@ -882,7 +1066,8 @@ module.exports = {
   getAllVegetables, addVegetable, updateVegetable, deleteVegetable,
   getAllClients, addClient, updateClient, deleteClient,
   getAllVendors, addVendor, updateVendor, deleteVendor,
-  saveTransaction, getAllTransactions, getTransactionsByDate,
+  saveTransaction, updateTransaction, reverseTransaction,
+  getAllTransactions, getTransactionsByDate,
   getTransactionById, getClientBills, getVendorBills, getVendorSummary,
   getCashDrawerByDate, saveCashDrawerOpening, resetCashDrawer, getCashDrawerHistory,
   getVendorBillsByDate, saveVendorPayments, getVendorPaymentReport, getVendorPaymentDetail,
